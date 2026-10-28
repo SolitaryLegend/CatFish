@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>CatFish</AssemblyName>
+    <RootNamespace>CatFish</RootNamespace>
+    <Product>CatFish</Product>
+    <Title>CatFish</Title>
+    <Copyright>孤独寂寞传说</Copyright>
+    <ApplicationIcon>Assets\CatFish.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Resource Include="Assets\AdBackground*Square.png" />
+    <Resource Include="Assets\CatFish.ico" />
+    <Resource Include="Assets\CatFish.png" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,36 @@
+<Window x:Class="CatFish.UI.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CatFish" Icon="/CatFish;component/Assets/CatFish.ico" Width="286" Height="244" ResizeMode="NoResize" WindowStyle="None" AllowsTransparency="True" WindowStartupLocation="CenterScreen"
+        Background="Transparent" Foreground="{StaticResource TextBrush}" FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="12" UseLayoutRounding="True" ToolTip="右键打开快捷键设置">
+    <Window.ContextMenu><ContextMenu><MenuItem Header="快捷键设置" Click="OpenHotkeys_Click"/><Separator/><MenuItem Header="退出 CatFish" Click="Exit_Click"/></ContextMenu></Window.ContextMenu>
+    <Border Background="{StaticResource CanvasBrush}" BorderBrush="{StaticResource BorderBrushSoft}" BorderThickness="1" CornerRadius="6">
+    <Grid Margin="10">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Grid Margin="0,0,0,10" Background="Transparent" MouseLeftButtonDown="Header_MouseLeftButtonDown">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Image Source="/CatFish;component/Assets/CatFish.png" Width="24" Height="24" Margin="0,0,5,0"/>
+                <TextBlock Text="CatFish" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="×" Width="22" Height="22" Padding="0" Background="Transparent" Foreground="{StaticResource MutedBrush}" Focusable="False" IsTabStop="False" ToolTip="关闭到托盘" Click="CloseToTray_Click"/>
+            </StackPanel>
+        </Grid>
+        <Grid x:Name="ToolGrid" Grid.Row="1">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="*"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Grid.Resources><Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Padding" Value="6,0"/></Style></Grid.Resources>
+            <Button Grid.Row="0" Margin="0,0,0,6" Background="#E3F4EF" Foreground="#247D68" Click="OpenTransparency_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="◐" FontSize="20" Width="24" VerticalAlignment="Center"/><TextBlock Text="窗口透明" VerticalAlignment="Center"/></StackPanel></Button>
+            <Button Grid.Row="1" Margin="0,0,0,6" Background="#EAF1FC" Foreground="#4E74A4" Click="OpenSwitcher_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="⇄" FontSize="20" Width="24" VerticalAlignment="Center"/><TextBlock Text="切换与滚动" VerticalAlignment="Center"/></StackPanel></Button>
+            <Button Grid.Row="2" Background="#F0ECFA" Foreground="#8068A6" Click="OpenSimulation_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="▤" FontSize="20" Width="24" VerticalAlignment="Center"/><TextBlock Text="系统模拟" VerticalAlignment="Center"/></StackPanel></Button>
+            <Button Grid.Column="2" Grid.Row="0" Margin="0,0,0,6" Background="#FBF1DF" Foreground="#A67B36" Click="OpenPopup_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="▱" FontSize="20" Width="24" VerticalAlignment="Center"/><TextBlock Text="广告弹窗" VerticalAlignment="Center"/></StackPanel></Button>
+            <Button Grid.Column="2" Grid.Row="1" Margin="0,0,0,6" Background="#E9F2F4" Foreground="#427D88" Click="OpenTxtReader_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="≡" FontSize="20" Width="24" VerticalAlignment="Center"/><TextBlock Text="单行阅读" VerticalAlignment="Center"/></StackPanel></Button>
+            <Button Grid.Column="2" Grid.Row="2" Background="#F9EAF0" Foreground="#A65C7C" Click="OpenMusic_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="♫" FontSize="20" Width="24" VerticalAlignment="Center"/><TextBlock Text="音乐播放" VerticalAlignment="Center"/></StackPanel></Button>
+        </Grid>
+        <TextBlock x:Name="StatusText" Grid.Row="2" Text="" Height="14" Foreground="{StaticResource MutedBrush}" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}">
+            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Margin" Value="0,6,0,0"/><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Hidden"/></Trigger></Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
+        <TextBlock Grid.Row="3" HorizontalAlignment="Right" Margin="0,4,0,0" FontSize="11">
+            <Hyperlink x:Name="WebsiteBookmarksLink" Foreground="#4E74A4" Click="OpenWebsiteBookmarks_Click">网址收藏</Hyperlink>
+        </TextBlock>
+    </Grid>
+    </Border>
+</Window>

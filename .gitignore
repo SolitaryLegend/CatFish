@@ -1,0 +1,10 @@
+# IDE files
+.vs/
+*.user
+*.suo
+
+# Reproducible build, test and publish output
+**/bin/
+**/obj/
+**/artifacts/
+TestResults/
