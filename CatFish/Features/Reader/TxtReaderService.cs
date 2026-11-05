@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows.Threading;
@@ -194,6 +195,19 @@ public sealed class TxtReaderService : IDisposable
     {
         if (Document is not null && double.IsFinite(percentage))
             Seek(Document.OffsetAtElement((int)Math.Round(Math.Clamp(percentage, 0, 100) / 100 * (Document.TotalElements - 1))));
+    }
+    public bool TrySeekText(string text, out string message)
+    {
+        if (string.IsNullOrWhiteSpace(text) || new StringInfo(text).LengthInTextElements is < 10 or > 30)
+        { message = "请输入 10～30 字的文字内容。"; return false; }
+        if (Document is null)
+        { message = "请先打开 TXT 文件，再进行文字定位。"; return false; }
+        var offset = Document.Text.IndexOf(text, StringComparison.Ordinal);
+        if (offset < 0)
+        { message = "未找到匹配内容，请检查输入文字是否与原文一致。"; return false; }
+        Seek(offset);
+        message = $"已定位到首个匹配处（原文字符位置：{Offset:N0}）。";
+        return true;
     }
     private void ManualNavigation() { if (Settings.PauseOnManualNavigation) PauseCore(); Status = IsPlaying ? "正在自动阅读" : "已暂停"; _ = PersistAsync(); }
 

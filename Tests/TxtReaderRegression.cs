@@ -89,6 +89,7 @@ internal static class TxtReaderRegression
             check(Wait(reader.OpenAsync(first)) && reader.Offset == savedOffset && !reader.IsPlaying, "switching back restores first file progress paused");
             check(Wait(reader.OpenAsync(second)) && reader.Offset == secondOffset, "second file retains its own reading cursor");
             check(File.ReadAllText(first) == original, "reader never modifies source TXT contents");
+            CheckTextLocation(directory, check);
             CheckRenderingClock(reader, check);
             settings.MaxCharacters = 16; reader.SetViewport(400, text => new StringInfo(text).LengthInTextElements); reader.RefreshLayout();
 
@@ -210,6 +211,7 @@ internal static class TxtReaderRegression
                 "reading tab exposes start and stop without a pause button");
             check(!Descendants<TextBlock>((DependencyObject)settingsWindow.Content).Any(text => text.Text.Contains("编码")),
                 "reading tab omits encoding controls and preview");
+            CheckTextLocator(settingsWindow, controller, check);
             for (var i = 0; i < tabs.Items.Count; i++)
             {
                 tabs.SelectedIndex = i; render(settingsWindow, $"txt-reader-settings-tab{i}.png");
@@ -255,6 +257,69 @@ internal static class TxtReaderRegression
             // Only this freshly created test directory is removed.
             Directory.Delete(directory, true);
         }
+    }
+
+    private static void CheckTextLocation(string directory, Action<bool, string> check)
+    {
+        var settings = new TxtReaderSettings { PauseOnManualNavigation = true };
+        var saves = 0;
+        using var reader = new TxtReaderService(settings, () => { saves++; return Task.CompletedTask; });
+        const string shortest = "这是一段用于文字定位的原文内容。";
+        var ten = shortest[..10];
+        check(!reader.TrySeekText(ten, out var message) && message.Contains("先打开"), "text location explains when no TXT is loaded");
+        var thirty = string.Concat(Enumerable.Repeat("中文定位测试", 5));
+        var unicode = string.Concat(Enumerable.Repeat("👨‍👩‍👧‍👦a\u0301", 5));
+        var prefix = "开头前缀。";
+        var text = prefix + shortest + "中间。" + thirty + "中间。" + unicode + "结尾。" + shortest;
+        var path = Path.Combine(directory, "text-location.txt"); File.WriteAllText(path, text);
+        check(Wait(reader.OpenAsync(path)), "text-location sample loads");
+        reader.Seek(text.Length - 1); reader.Play(); var beforeSaves = saves;
+        check(reader.TrySeekText(ten, out message) && reader.Offset == prefix.Length && reader.CurrentPage!.Text.StartsWith(ten, StringComparison.Ordinal)
+            && !reader.IsPlaying && settings.RecentFiles.Single().Offset == prefix.Length && saves > beforeSaves,
+            "ten-character text location finds the first match across the full document, updates the page, pauses and saves progress");
+        check(reader.TrySeekText(thirty, out _) && reader.Offset == text.IndexOf(thirty, StringComparison.Ordinal), "text location accepts the inclusive thirty-character upper bound");
+        check(reader.TrySeekText(unicode, out _) && reader.Offset == text.IndexOf(unicode, StringComparison.Ordinal), "text location counts emoji clusters and combining marks as single characters");
+        settings.PauseOnManualNavigation = false; reader.Play();
+        check(reader.TrySeekText(ten, out _) && reader.IsPlaying, "text location respects the option to continue automatic reading after manual navigation");
+        var offset = reader.Offset; beforeSaves = saves;
+        foreach (var invalid in new[] { "", new string(' ', 10), ten[..9], thirty + "字", "原文不存在的十个字测试" })
+            check(!reader.TrySeekText(invalid, out message) && !string.IsNullOrWhiteSpace(message) && reader.Offset == offset && reader.IsPlaying && saves == beforeSaves,
+                "invalid or unmatched text leaves the reading position, playback and saved progress intact");
+        reader.TrySeekText("原文不存在的十个字测试", out message);
+        check(message.Contains("未找到"), "unmatched text reports a clear result");
+    }
+
+    private static void CheckTextLocator(Window window, TxtReaderService reader, Action<bool, string> check)
+    {
+        var progress = Descendants<GroupBox>((DependencyObject)window.Content).Single(group => (string)group.Header == "阅读进度");
+        var input = Descendants<TextBox>(progress).Single(box => box.Name == "ReaderTextSearchInput");
+        var locate = Descendants<Button>(progress).Single(button => button.Name == "ReaderTextLocateButton");
+        var originalOffset = reader.Offset;
+        try
+        {
+            input.Text = "第一段中文，Hell";
+            locate.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(reader.Offset == 0, "text locator at the bottom of reading progress navigates when its button is clicked");
+            reader.Seek(originalOffset);
+            using var source = new HwndSource(new HwndSourceParameters("text locator regression"));
+            input.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Enter) { RoutedEvent = Keyboard.KeyDownEvent });
+            check(reader.Offset == 0, "Enter in the text locator performs the same full-document search");
+            input.Text = "少于十字"; reader.Seek(originalOffset);
+            locate.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(reader.Offset == originalOffset, "the text locator rejects input shorter than ten characters");
+            input.Text = new string('字', 30); input.Select(input.Text.Length, 0);
+            var typed = new TextCompositionEventArgs(Keyboard.PrimaryDevice, new TextComposition(InputManager.Current, input, "字")) { RoutedEvent = TextCompositionManager.PreviewTextInputEvent };
+            input.RaiseEvent(typed);
+            check(typed.Handled, "typing beyond thirty characters is blocked");
+            var pasted = new DataObjectPastingEventArgs(new DataObject(DataFormats.UnicodeText, "字"), false, DataFormats.UnicodeText);
+            input.RaiseEvent(pasted);
+            check(pasted.CommandCancelled, "pasting beyond thirty characters is rejected");
+            input.SelectAll();
+            var replacement = new DataObjectPastingEventArgs(new DataObject(DataFormats.UnicodeText, "第一段中文，Hell"), false, DataFormats.UnicodeText);
+            input.RaiseEvent(replacement);
+            check(!replacement.CommandCancelled, "pasting valid replacement text accounts for the current selection");
+        }
+        finally { input.Clear(); reader.Seek(originalOffset); }
     }
 
     private static void CheckColorPalette(Window window, TxtReaderService reader, Action<bool, string> check)

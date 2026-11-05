@@ -21,13 +21,24 @@ public sealed class HotkeySettingsWindow : Window
 
     public HotkeySettingsWindow()
     {
-        Title = "快捷键设置 · CatFish"; Width = 540; Height = 620; MinWidth = 520; MinHeight = 390; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Title = "快捷键设置 · CatFish"; Width = 310; SizeToContent = SizeToContent.Height;
+        MaxHeight = SystemParameters.WorkArea.Height - 24; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var root = ViewFactory.Shell(this);
+        FontSize = 11; root.Margin = new Thickness(8, 4, 8, 8);
+        Grid.SetIsSharedSizeScope(_rows, true);
         foreach (var (action, name) in Items) _rows.Children.Add(BuildRow(action, name));
-        root.Children.Add(ViewFactory.Card(_rows));
-        root.Children.Add(ViewFactory.Muted("点击输入框后直接按组合键，再点“应用”。Delete / Backspace 清空，Esc 取消录入；紧急停止不可停用。"));
-        root.Children.Add(ViewFactory.Action("恢复推荐快捷键", (_, _) => ResetDefaults(), true)); root.Children.Add(_status);
-        Content = ViewFactory.Frame(this, new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = root }, "快捷键设置");
+        var card = ViewFactory.Card(_rows); card.Padding = new Thickness(8, 6, 8, 4); card.Margin = new Thickness(0, 0, 0, 5);
+        root.Children.Add(card);
+        var hint = ViewFactory.Muted("点击输入框按组合键，再点“应用”。Delete / Backspace 清空，Esc 取消；紧急停止不可停用。");
+        hint.FontSize = 10; root.Children.Add(hint);
+        var reset = ViewFactory.Action("恢复推荐快捷键", (_, _) => ResetDefaults(), true);
+        reset.Padding = new Thickness(8, 3, 8, 3); reset.Margin = new Thickness(0, 5, 0, 0); root.Children.Add(reset);
+        _status.Height = double.NaN; _status.FontSize = 10; _status.Margin = new Thickness(0, 4, 0, 0);
+        var statusStyle = new Style(typeof(TextBlock));
+        var emptyStatus = new Trigger { Property = TextBlock.TextProperty, Value = "" };
+        emptyStatus.Setters.Add(new Setter(VisibilityProperty, Visibility.Collapsed)); statusStyle.Triggers.Add(emptyStatus);
+        _status.Style = statusStyle; root.Children.Add(_status);
+        Content = ViewFactory.Frame(this, new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Content = root }, "快捷键设置", compact: true);
         Deactivated += (_, _) => EndCapture();
         Closed += (_, _) => EndCapture();
         Activated += (_, _) =>
@@ -38,15 +49,16 @@ public sealed class HotkeySettingsWindow : Window
 
     private UIElement BuildRow(string action, string name)
     {
-        var grid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) }); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var grid = new Grid { Margin = new Thickness(0, 0, 0, 3) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto, SharedSizeGroup = "HotkeyAction" });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var label = new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center }; grid.Children.Add(label);
         var chord = AppController.Settings.Hotkeys.GetValueOrDefault(action) ?? "";
         var box = new TextBox
         {
             Name = action + "Input", Text = HotkeyService.DisplayChord(chord), Tag = chord, IsReadOnly = true,
             IsReadOnlyCaretVisible = false, ContextMenu = null, VerticalContentAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(8, 0, 8, 0), ToolTip = "点击后直接按组合键"
+            Height = 24, Padding = new Thickness(4, 1, 4, 1), Margin = new Thickness(6, 0, 6, 0), ToolTip = "点击后直接按组合键"
         };
         InputMethod.SetIsInputMethodEnabled(box, false);
         System.Windows.Automation.AutomationProperties.SetName(box, name + "快捷键");
@@ -85,7 +97,9 @@ public sealed class HotkeySettingsWindow : Window
             EndCapture(); Keyboard.ClearFocus();
             if (AppController.TrySetHotkey(action, (string)box.Tag, out var error)) _status.Text = box.Text.Length == 0 ? $"已停用“{name}”。" : $"已更新“{name}”：{box.Text}。";
             else _status.Text = error;
-        }); Grid.SetColumn(apply, 2); grid.Children.Add(apply);
+        });
+        apply.Height = 24; apply.Padding = new Thickness(8, 2, 8, 2); apply.Margin = new Thickness(0);
+        Grid.SetColumn(apply, 2); grid.Children.Add(apply);
         return grid;
     }
 

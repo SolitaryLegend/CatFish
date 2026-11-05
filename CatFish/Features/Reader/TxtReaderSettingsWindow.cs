@@ -109,6 +109,7 @@ public sealed class TxtReaderSettingsWindow : Window
         { if (double.TryParse(percent.Text, out var value) && double.IsFinite(value) && value >= 0 && value <= 100) _reader.SeekPercent(value); else _status.Text = "请输入 0～100 的百分比。"; }, true),
             new TextBlock { Text = "位置 ", Margin = new Thickness(6, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }, offset, ViewFactory.Action("定位", (_, _) =>
         { if (int.TryParse(offset.Text, out var value) && value >= 0) _reader.Seek(value); else _status.Text = "请输入非负的原文字符偏移。"; }, true)));
+        controls.Children.Add(TextLocator());
         page.Children.Add(Group("阅读进度", controls));
         var playback = new StackPanel();
         playback.Children.Add(Buttons(_play, _stop));
@@ -127,6 +128,33 @@ public sealed class TxtReaderSettingsWindow : Window
             ViewFactory.Action("重新定位", async (_, _) => await RelocateAsync(), true),
             ViewFactory.Action("移除记录", (_, _) => RemoveHistory(false), true), ViewFactory.Action("清空历史", (_, _) => RemoveHistory(true), true)));
         page.Children.Add(Group("最近文件", history)); return page;
+    }
+
+    private UIElement TextLocator()
+    {
+        var input = new TextBox { Name = "ReaderTextSearchInput", Margin = new Thickness(0, 1, 4, 1), ToolTip = "输入原文中的连续文字，限 10～30 字；按 Enter 定位到全文首个匹配处。" };
+        System.Windows.Automation.AutomationProperties.SetName(input, "文字内容定位（10～30 字）");
+        void Locate()
+        {
+            _reader.TrySeekText(input.Text, out var message); _status.Text = message;
+        }
+        bool Fits(string inserted) => new StringInfo(input.Text.Remove(input.SelectionStart, input.SelectionLength).Insert(input.SelectionStart, inserted)).LengthInTextElements <= 30;
+        input.PreviewTextInput += (_, e) =>
+        {
+            if (!Fits(e.Text)) { e.Handled = true; _status.Text = "文字定位最多输入 30 字。"; }
+        };
+        DataObject.AddPastingHandler(input, (_, e) =>
+        {
+            if (e.DataObject.GetData(DataFormats.UnicodeText) is string pasted && !Fits(pasted))
+            { e.CancelCommand(); _status.Text = "文字定位最多输入 30 字，请缩短粘贴内容。"; }
+        });
+        input.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Locate(); e.Handled = true; } };
+        var locate = ViewFactory.Action("定位", (_, _) => Locate(), true); locate.Name = "ReaderTextLocateButton";
+        var row = new Grid(); row.ColumnDefinitions.Add(new()); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        row.Children.Add(input); Grid.SetColumn(locate, 1); row.Children.Add(locate);
+        var content = new StackPanel(); content.Children.Add(Field("文字定位", row, 52));
+        content.Children.Add(ViewFactory.Muted("输入 10～30 字，按原文查找首个匹配处。"));
+        return content;
     }
 
     private StackPanel AppearancePage()
