@@ -25,11 +25,27 @@ public sealed class HotkeySettingsWindow : Window
         MaxHeight = SystemParameters.WorkArea.Height - 24; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var root = ViewFactory.Shell(this);
         FontSize = 11; root.Margin = new Thickness(8, 4, 8, 8);
+        var disable = new CheckBox
+        {
+            Name = "DisableHotkeysCheckBox", Content = "禁用快捷键", IsChecked = AppController.Settings.HotkeysDisabled,
+            Margin = new Thickness(0, 0, 0, 6), ToolTip = "停用全部全局快捷键（含紧急停止），保留当前组合；取消勾选后恢复。"
+        };
+        void ToggleDisabled(object sender, RoutedEventArgs e)
+        {
+            EndCapture(); Keyboard.ClearFocus(); _captureBox = null;
+            var disabled = disable.IsChecked == true;
+            var conflicts = AppController.SetHotkeysDisabled(disabled);
+            _rows.IsEnabled = !disabled;
+            _status.Text = disabled ? "已禁用全部快捷键，原有组合已保留。"
+                : conflicts.Count == 0 ? "已启用快捷键，恢复原有组合。" : "以下快捷键注册冲突：" + string.Join("、", conflicts);
+        }
+        disable.Checked += ToggleDisabled; disable.Unchecked += ToggleDisabled;
+        root.Children.Add(disable); _rows.IsEnabled = !AppController.Settings.HotkeysDisabled;
         Grid.SetIsSharedSizeScope(_rows, true);
         foreach (var (action, name) in Items) _rows.Children.Add(BuildRow(action, name));
         var card = ViewFactory.Card(_rows); card.Padding = new Thickness(8, 6, 8, 4); card.Margin = new Thickness(0, 0, 0, 5);
         root.Children.Add(card);
-        var hint = ViewFactory.Muted("点击输入框按组合键，再点“应用”。Delete / Backspace 清空，Esc 取消；紧急停止不可停用。");
+        var hint = ViewFactory.Muted("点击输入框按组合键，再点“应用”。Delete / Backspace 清空，Esc 取消；紧急停止组合不可清空。");
         hint.FontSize = 10; root.Children.Add(hint);
         var reset = ViewFactory.Action("恢复推荐快捷键", (_, _) => ResetDefaults(), true);
         reset.Padding = new Thickness(8, 3, 8, 3); reset.Margin = new Thickness(0, 5, 0, 0); root.Children.Add(reset);
@@ -108,7 +124,8 @@ public sealed class HotkeySettingsWindow : Window
         EndCapture(); Keyboard.ClearFocus();
         var conflicts = AppController.ResetHotkeys();
         _rows.Children.Clear(); foreach (var (action, name) in Items) _rows.Children.Add(BuildRow(action, name));
-        _status.Text = conflicts.Count == 0 ? "已恢复所有推荐快捷键。" : "以下快捷键注册冲突：" + string.Join("、", conflicts);
+        _status.Text = conflicts.Count > 0 ? "以下快捷键注册冲突：" + string.Join("、", conflicts)
+            : AppController.Settings.HotkeysDisabled ? "已恢复推荐组合，快捷键仍处于禁用状态。" : "已恢复所有推荐快捷键。";
     }
 
     private static void SetChord(TextBox box, string chord)

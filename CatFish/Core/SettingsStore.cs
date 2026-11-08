@@ -61,12 +61,19 @@ public sealed class SettingsStore
                 if (settings.PopupWidth == 640 && settings.PopupHeight == 510) settings.PopupHeight = 670;
                 settings.PopupLayoutVersion = 5;
             }
+            if (settings.PopupLayoutVersion < 6)
+            {
+                if (settings.PopupAspectRatioLocked)
+                    (settings.PopupWidth, settings.PopupHeight) = Features.Popup.PopupLayout.SquareSize(settings.PopupWidth);
+                settings.PopupLayoutVersion = 6;
+            }
+            if (!Features.Popup.PopupBackgrounds.Items.Any(background => background.Id == settings.PopupBackground)) settings.PopupBackground = Features.Popup.PopupBackgrounds.DefaultId;
             if (settings.PopupLayoutVersion < Features.Popup.PopupLayout.Version)
             {
-                (settings.PopupWidth, settings.PopupHeight) = Features.Popup.PopupLayout.SquareSize(settings.PopupWidth);
+                if (settings.PopupAspectRatioLocked)
+                    (settings.PopupWidth, settings.PopupHeight) = Features.Popup.PopupLayout.BackgroundSize(settings.PopupWidth, settings.PopupBackground);
                 settings.PopupLayoutVersion = Features.Popup.PopupLayout.Version;
             }
-            if (!Features.Popup.PopupBackgrounds.Items.Any(background => background.Id == settings.PopupBackground)) settings.PopupBackground = "shopping";
             settings.SwitchMinSeconds = Math.Clamp(settings.SwitchMinSeconds, 10, 180); settings.SwitchMaxSeconds = Math.Clamp(settings.SwitchMaxSeconds, settings.SwitchMinSeconds, 180);
             settings.ScrollMinSeconds = Math.Clamp(settings.ScrollMinSeconds, 1, 600); settings.ScrollMaxSeconds = Math.Clamp(settings.ScrollMaxSeconds, settings.ScrollMinSeconds, 600);
             settings.ScrollRows = Math.Clamp(settings.ScrollRows, 1, 10); settings.PopupWidth = Math.Clamp(settings.PopupWidth, Features.Popup.PopupLayout.MinWidth, 900); settings.PopupHeight = Math.Clamp(settings.PopupHeight, Features.Popup.PopupLayout.MinHeight, 700);

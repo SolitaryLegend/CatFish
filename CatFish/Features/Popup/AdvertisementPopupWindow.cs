@@ -21,7 +21,8 @@ public sealed class AdvertisementPopupWindow : Window
     private readonly Border _hint;
     private readonly DockPanel _toolbar = new() { Background = new SolidColorBrush(Color.FromRgb(78, 22, 24)), LastChildFill = true };
     private readonly StackPanel _menu = new() { Orientation = Orientation.Horizontal, Visibility = Visibility.Hidden };
-    private readonly Image _background = new() { Stretch = Stretch.Fill };
+    private readonly Image _background = new() { Stretch = Stretch.Uniform };
+    private readonly PopupBackgroundPlayer _backgroundPlayer;
     private readonly ProcessAudioMute _audio = new();
     private readonly Button _muteButton;
     private string? _backgroundId;
@@ -35,7 +36,7 @@ public sealed class AdvertisementPopupWindow : Window
     private WindowTarget? _miniSource;
     private WindowTarget? _closeTarget;
     private DispatcherOperation? _overlayRefresh;
-    private bool _restoreOnly;
+    private bool? _closeApplicationOverride;
     private bool _restoreFailed;
     private bool _closed;
     private int _remaining;
@@ -48,7 +49,9 @@ public sealed class AdvertisementPopupWindow : Window
     public AdvertisementPopupWindow(AppSettings settings)
     {
         _settings = settings; Title = "广告弹窗 · CatFish";
-        _background.Source = PopupBackgrounds.Load(settings.PopupBackground); _backgroundId = settings.PopupBackground;
+        _backgroundPlayer = new(_background);
+        _backgroundPlayer.FrameChanged += () => _overlay?.UpdateFrame(_background.Source);
+        _backgroundPlayer.SetBackground(settings.PopupBackground); _backgroundId = settings.PopupBackground;
         _muteButton = ToolbarButton("静音", ToggleMute);
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; Background = Brushes.Black;
         ShowInTaskbar = false; ShowActivated = false; Topmost = true;
@@ -111,13 +114,13 @@ public sealed class AdvertisementPopupWindow : Window
         Closing += (_, args) =>
         {
             _restoreFailed = false;
-            _closeTarget = !_restoreOnly && _settings.PopupCloseSelectedApplication ? _target ?? _miniSource : null;
+            _closeTarget = (_closeApplicationOverride ?? _settings.PopupCloseSelectedApplication) ? _target ?? _miniSource : null;
             if (!_host.Session.Detach(out var error, restoreForClose: _closeTarget is not null))
             { _restoreFailed = true; _closeTarget = null; args.Cancel = true; SetStatus(error); _hint.Visibility = Visibility.Visible; }
         };
         Closed += (_, _) =>
         {
-            _closed = true; _overlayRefresh?.Abort(); _audio.Dispose(); _dropMonitor?.Dispose(); _frameTimer.Stop(); _hideTimer.Stop(); _overlay?.Close(); _overlay = null;
+            _closed = true; _backgroundPlayer.Dispose(); _overlayRefresh?.Abort(); _audio.Dispose(); _dropMonitor?.Dispose(); _frameTimer.Stop(); _hideTimer.Stop(); _overlay?.Close(); _overlay = null;
             _host.Dispose(); OpenPopups.Remove(this); if (ActivePopup == this) ActivePopup = null;
             if (_closeTarget is { } target && NativeMethods.IsWindow(target.Handle)
                 && NativeMethods.GetWindowThreadProcessId(target.Handle, out var processId) != 0 && processId == target.ProcessId)
@@ -136,13 +139,13 @@ public sealed class AdvertisementPopupWindow : Window
     {
         if (ActivePopup is { IsVisible: true }) ActivePopup.Close(); else ShowGlobal();
     }
-    public static void CloseAll()
+    public static void CloseAll(bool closeSelectedApplications = false)
     {
         foreach (var popup in OpenPopups.ToArray())
         {
-            popup._restoreOnly = true;
+            popup._closeApplicationOverride = closeSelectedApplications;
             try { popup.Close(); }
-            finally { popup._restoreOnly = false; }
+            finally { popup._closeApplicationOverride = null; }
         }
     }
     internal static void ApplyOpenSettings() { foreach (var popup in OpenPopups.ToArray()) popup.ApplySettings(); }
@@ -169,7 +172,7 @@ public sealed class AdvertisementPopupWindow : Window
     {
         Width = Math.Clamp(_settings.PopupWidth, PopupLayout.MinWidth, 900); Height = Math.Clamp(_settings.PopupHeight, PopupLayout.MinHeight, 700);
         if (_backgroundId != _settings.PopupBackground)
-        { _background.Source = PopupBackgrounds.Load(_settings.PopupBackground); _backgroundId = _settings.PopupBackground; }
+        { _backgroundPlayer.SetBackground(_settings.PopupBackground); _backgroundId = _settings.PopupBackground; }
         _background.Opacity = _settings.PopupOpacity;
         PositionOnMonitor(); UpdateLayout(); _host.Session.Resize(_host.Handle); UpdateOverlay(); ResetAutoHide();
     }
@@ -241,6 +244,8 @@ public sealed class AdvertisementPopupWindow : Window
     {
         var index = PopupBackgrounds.Items.ToList().FindIndex(background => background.Id == _settings.PopupBackground);
         _settings.PopupBackground = PopupBackgrounds.Items[(index + 1) % PopupBackgrounds.Items.Count].Id;
+        if (_settings.PopupAspectRatioLocked)
+            (_settings.PopupWidth, _settings.PopupHeight) = PopupLayout.BackgroundSize(_settings.PopupWidth, _settings.PopupBackground);
         ApplySettings(); PopupSettingsWindow.RefreshBackgroundSelection(); _ = AppController.SaveSettingsAsync();
     }
 

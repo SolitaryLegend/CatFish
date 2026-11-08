@@ -27,8 +27,9 @@ public sealed class HotkeyService : IDisposable
 
     public IReadOnlyList<string> RegisterDefaults()
     {
+        UnregisterAll();
         var failed = new List<string>();
-        if (_suspended) return failed;
+        if (_suspended || AppController.Settings.HotkeysDisabled) return failed;
         foreach (var (action, id) in Bindings)
         {
             var chord = AppController.Settings.Hotkeys.GetValueOrDefault(action);
@@ -54,6 +55,11 @@ public sealed class HotkeyService : IDisposable
             if (AppController.Settings.Hotkeys.TryGetValue(other.Action, out var chord) && TryParse(chord, out var otherModifiers, out var otherKey) && otherModifiers == modifiers && otherKey == key)
             { error = $"此组合已分配给“{Describe(other.Action)}”。"; return false; }
         }
+        if (AppController.Settings.HotkeysDisabled)
+        {
+            NativeMethods.UnregisterHotKey(_source.Handle, binding.Id); _registered.Remove(binding.Id);
+            error = string.Empty; return true;
+        }
         var oldChord = AppController.Settings.Hotkeys.GetValueOrDefault(action) ?? string.Empty;
         NativeMethods.UnregisterHotKey(_source.Handle, binding.Id); _registered.Remove(binding.Id);
         if (!NativeMethods.RegisterHotKey(_source.Handle, binding.Id, modifiers | NativeMethods.ModNoRepeat, key))
@@ -74,6 +80,11 @@ public sealed class HotkeyService : IDisposable
     public void Suspend()
     {
         _suspended = true;
+        UnregisterAll();
+    }
+
+    private void UnregisterAll()
+    {
         foreach (var id in _registered) NativeMethods.UnregisterHotKey(_source.Handle, id);
         _registered.Clear();
     }
@@ -128,7 +139,7 @@ public sealed class HotkeyService : IDisposable
     {
         if (message != NativeMethods.WmHotkey) return nint.Zero;
         var id = wParam.ToInt32(); var binding = Bindings.FirstOrDefault(x => x.Id == id);
-        if (!_suspended && binding != default) Pressed?.Invoke(binding.Action);
+        if (!_suspended && !AppController.Settings.HotkeysDisabled && binding != default) Pressed?.Invoke(binding.Action);
         handled = true; return nint.Zero;
     }
 
@@ -142,7 +153,6 @@ public sealed class HotkeyService : IDisposable
 
     public void Dispose()
     {
-        foreach (var id in _registered) NativeMethods.UnregisterHotKey(_source.Handle, id);
-        _registered.Clear(); _source.RemoveHook(WndProc);
+        UnregisterAll(); _source.RemoveHook(WndProc);
     }
 }

@@ -29,10 +29,10 @@ public sealed class AppSettings
     public double? PopupCustomLeft { get; set; }
     public double? PopupCustomTop { get; set; }
     public int PopupLayoutVersion { get; set; }
-    public int PopupWidth { get; set; } = 640;
-    public int PopupHeight { get; set; } = 670;
+    public int PopupWidth { get; set; } = 480;
+    public int PopupHeight { get; set; } = 633;
     public bool PopupAspectRatioLocked { get; set; } = true;
-    public string PopupBackground { get; set; } = "shopping";
+    public string PopupBackground { get; set; } = Features.Popup.PopupBackgrounds.DefaultId;
     public int PopupAutoHideSeconds { get; set; }
     public int PopupFrequencySeconds { get; set; } = 90;
     public bool PopupLocked { get; set; }
@@ -43,6 +43,7 @@ public sealed class AppSettings
     public double PopupVideoOpacity { get; set; } = .84;
     public int PopupBlurRadius { get; set; } = 3;
     public int HotkeyLayoutVersion { get; set; }
+    public bool HotkeysDisabled { get; set; }
     public Dictionary<string, string> Hotkeys { get; set; } = new()
     {
         ["DecreaseOpacity"] = "Ctrl+Shift+J", ["IncreaseOpacity"] = "Ctrl+Shift+K",

@@ -53,6 +53,7 @@ internal static class HotkeyRegression
             var store = new SettingsStore();
             typeof(SettingsStore).GetField("_path", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(store, path);
             var loaded = store.Load();
+            check(!loaded.HotkeysDisabled, "existing settings keep global shortcuts enabled by default");
             check(removed.All(action => !loaded.Hotkeys.ContainsKey(action)) && loaded.Hotkeys["TogglePopup"] == "Ctrl+Shift+T"
                 && loaded.Hotkeys["TxtPrevious"] == "Ctrl+Up" && loaded.Hotkeys["EmergencyStop"] == "Ctrl+Shift+X"
                 && loaded.Hotkeys["MusicPlayback"] == "Ctrl+Alt+F5", "loading old settings upgrades defaults, adds music and removes retired shortcuts");
@@ -60,6 +61,11 @@ internal static class HotkeyRegression
             loaded.Hotkeys["TogglePopup"] = "Ctrl+Alt+Shift+P";
             store.SaveAsync(loaded).GetAwaiter().GetResult();
             check(store.Load().Hotkeys["TogglePopup"] == "Ctrl+Alt+Shift+P", "migration runs only once so later customization persists");
+            loaded.HotkeysDisabled = true;
+            store.SaveAsync(loaded).GetAwaiter().GetResult();
+            var disabled = store.Load();
+            check(disabled.HotkeysDisabled && disabled.Hotkeys.OrderBy(pair => pair.Key).SequenceEqual(loaded.Hotkeys.OrderBy(pair => pair.Key)),
+                "global shortcut disabling survives a settings reload and preserves every binding");
         }
         finally { File.Delete(path); }
 
@@ -67,6 +73,9 @@ internal static class HotkeyRegression
         var hwnd = new WindowInteropHelper(host).EnsureHandle();
         var otherHwnd = new WindowInteropHelper(competing).EnsureHandle();
         var saved = AppController.Settings.Hotkeys;
+        var savedDisabled = AppController.Settings.HotkeysDisabled;
+        var controllerHotkeys = typeof(AppController).GetField("_hotkeys", BindingFlags.NonPublic | BindingFlags.Static)!;
+        var savedService = controllerHotkeys.GetValue(null);
         using (var hotkeys = new HotkeyService(host))
         {
             try
@@ -88,11 +97,31 @@ internal static class HotkeyRegression
                 NativeMethods.UnregisterHotKey(otherHwnd, 900);
                 check(hotkeys.Resume().Count == 0 && !NativeMethods.RegisterHotKey(otherHwnd, 900, mods, 0x7B), "ending capture restores the Windows registration");
                 Press(314); check(actions.Count == 4, "hotkey dispatch resumes after capture");
+                controllerHotkeys.SetValue(null, hotkeys);
+                var originalChord = AppController.Settings.Hotkeys["MusicPlayback"];
+                check(AppController.SetHotkeysDisabled(true).Count == 0 && AppController.Settings.Hotkeys["MusicPlayback"] == originalChord
+                    && NativeMethods.RegisterHotKey(otherHwnd, 900, mods, 0x7B), "global disabling immediately releases the Windows shortcut and preserves its combination");
+                NativeMethods.UnregisterHotKey(otherHwnd, 900);
+                Press(314); Press(307);
+                check(actions.Count == 4, "global disabling suppresses queued shortcuts including emergency stop");
+                hotkeys.Suspend(); hotkeys.Resume();
+                check(hotkeys.RegisterDefaults().Count == 0 && NativeMethods.RegisterHotKey(otherHwnd, 900, mods, 0x7B),
+                    "ending capture and refreshing registration cannot reactivate globally disabled shortcuts");
+                NativeMethods.UnregisterHotKey(otherHwnd, 900);
+                check(AppController.TrySetHotkey("MusicPlayback", "Ctrl+Alt+Shift+F11", out _) && NativeMethods.RegisterHotKey(otherHwnd, 900, mods, 0x7A),
+                    "editing a binding while disabled saves the new combination without reserving it");
+                check(AppController.SetHotkeysDisabled(false).SequenceEqual(new[] { "音乐播放/暂停" }), "reenabling reports shortcuts occupied by another application");
+                NativeMethods.UnregisterHotKey(otherHwnd, 900);
+                check(hotkeys.RegisterDefaults().Count == 0 && !NativeMethods.RegisterHotKey(otherHwnd, 900, mods, 0x7A),
+                    "reenabling registers the preserved customized combination again");
+                Press(314); check(actions.Count == 5, "reenabled shortcuts dispatch normally");
             }
             finally
             {
                 NativeMethods.UnregisterHotKey(otherHwnd, 900);
                 AppController.Settings.Hotkeys = saved;
+                AppController.Settings.HotkeysDisabled = savedDisabled;
+                controllerHotkeys.SetValue(null, savedService);
             }
         }
         host.Close(); competing.Close();
@@ -118,8 +147,26 @@ internal static class HotkeyRegression
                 emergency.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, source, 0, Key.Back) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
                 check(emergency.Text == "Ctrl+Shift+X", "key capture cannot clear emergency stop");
             }
+            var disable = Descendants<CheckBox>((DependencyObject)settings.Content).Single(box => box.Name == "DisableHotkeysCheckBox");
+            var savedChords = AppController.Settings.Hotkeys.ToDictionary(pair => pair.Key, pair => pair.Value);
+            disable.IsChecked = true;
+            check(AppController.Settings.HotkeysDisabled && inputs.All(box => !box.IsEnabled)
+                && AppController.Settings.Hotkeys.OrderBy(pair => pair.Key).SequenceEqual(savedChords.OrderBy(pair => pair.Key)),
+                "the disable checkbox deactivates shortcut editing while preserving existing combinations");
+            render(settings, "hotkey-settings-disabled.png");
+            Descendants<Button>((DependencyObject)settings.Content).Single(button => button.Content as string == "恢复推荐快捷键")
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(AppController.Settings.HotkeysDisabled && disable.IsChecked == true
+                && Descendants<TextBox>((DependencyObject)settings.Content).All(box => !box.IsEnabled), "restoring recommended combinations leaves the global disable option selected");
+            disable.IsChecked = false;
+            check(!AppController.Settings.HotkeysDisabled && Descendants<TextBox>((DependencyObject)settings.Content).All(box => box.IsEnabled),
+                "clearing the disable checkbox reactivates shortcut editing");
         }
-        finally { settings.Close(); }
+        finally
+        {
+            settings.Close(); AppController.Settings.Hotkeys = saved; AppController.Settings.HotkeysDisabled = savedDisabled;
+            AppController.SaveSettingsAsync().GetAwaiter().GetResult();
+        }
 
         // A hidden launcher should remain hidden; the old implementation showed and activated it here.
         var mainField = typeof(AppController).GetField("_main", BindingFlags.NonPublic | BindingFlags.Static)!;

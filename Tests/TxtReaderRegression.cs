@@ -197,6 +197,7 @@ internal static class TxtReaderRegression
             Wait(controller.OpenAsync(first)); controller.SeekPercent(25);
             AppController.ShowTxtReader(); controller.Play(); AppController.EmergencyStop();
             check(!controller.IsPlaying && controller.Offset > 0, "global emergency stop pauses TXT reading and preserves progress");
+            check(AppController.ReaderWindow is null, "global emergency stop closes the floating reader window");
             AppController.ReaderWindow?.Close();
             var actualHistory = controller.Settings.RecentFiles.ToArray();
             foreach (var historyPath in new[] { second, gbPath, noBom })

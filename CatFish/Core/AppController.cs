@@ -21,6 +21,7 @@ public static class AppController
     private static TrayService? _tray;
     private static TxtReaderService? _txtReader;
     private static MusicPlayerService? _music;
+    private static bool _isEmergencyStopping;
     public static MusicPlayerService Music => _music ??= new(Settings.Music);
     public static void ToggleMusicPlayback()
     {
@@ -150,19 +151,48 @@ public static class AppController
 
     public static void EmergencyStop()
     {
-        OpacityToastWindow.CloseCurrent();
-        _txtReader?.Pause();
-        _music?.Stop();
-        WindowSwitcherWindow.EmergencyStopAll();
-        PopupSettingsWindow.EmergencyStop();
-        AdvertisementPopupWindow.CloseAll();
-        SimulationSceneWindow.CloseAll();
-        Appearance.RestoreAll();
-        if (_main is not null)
+        if (_isEmergencyStopping) return;
+        _isEmergencyStopping = true;
+        try
         {
-            _main.Opacity = 1;
-            _main.StatusText.Text = "紧急停止完成：后台任务已停止，窗口外观已恢复。";
+            // Stop feature activity and floating output before closing their control windows.
+            _txtReader?.EmergencyStop();
+            _music?.EmergencyStop();
+            WindowSwitcherWindow.EmergencyStopAll();
+            PopupSettingsWindow.EmergencyStop();
+            SimulationSceneWindow.CloseAll();
+            _readerWindow?.Close();
+            OpacityToastWindow.CloseCurrent();
+            Appearance.RestoreAll();
+
+            // Include independent tray-launched windows and dialogs, not just registered features.
+            var windows = Application.Current?.Windows.Cast<Window>()
+                .Where(window => window != _main && window is not AdvertisementPopupWindow)
+                .OrderByDescending(OwnerDepth).ToArray() ?? [];
+            foreach (var window in windows)
+            {
+                if (!Application.Current!.Windows.Cast<Window>().Contains(window)) continue;
+                window.Close();
+                // A validation/save cancellation can retain edits without leaving a window onscreen.
+                if (window.IsVisible) window.Hide();
+            }
+
+            // Keep the existing close-to-tray behavior and global shortcuts available.
+            if (_main is not null)
+            {
+                _main.Opacity = 1;
+                _main.StatusText.Text = "紧急停止完成：功能已停止，子窗口已关闭。";
+                _main.Close();
+            }
         }
+        finally { _isEmergencyStopping = false; }
+    }
+
+    private static int OwnerDepth(Window window)
+    {
+        var depth = 0;
+        for (var owner = window.Owner; owner is not null; owner = owner.Owner) depth++;
+        return depth;
     }
 
     public static void ReturnToMain()
@@ -187,7 +217,7 @@ public static class AppController
         try { Store.SaveAsync(Settings).GetAwaiter().GetResult(); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         _tray?.Dispose(); _tray = null;
-        WindowSwitcherWindow.EmergencyStopAll(); PopupSettingsWindow.EmergencyStop(); AdvertisementPopupWindow.CloseAll(); SimulationSceneWindow.CloseAll();
+        WindowSwitcherWindow.EmergencyStopAll(); PopupSettingsWindow.EmergencyStop(closeSelectedApplications: false); SimulationSceneWindow.CloseAll();
         Appearance.RestoreAll(); _hotkeys?.Dispose(); _hotkeys = null;
     }
 
@@ -200,6 +230,13 @@ public static class AppController
     internal static void BeginHotkeyCapture() => _hotkeys?.Suspend();
     internal static IReadOnlyList<string> EndHotkeyCapture() => _hotkeys?.Resume() ?? Array.Empty<string>();
 
+    public static IReadOnlyList<string> SetHotkeysDisabled(bool disabled)
+    {
+        Settings.HotkeysDisabled = disabled;
+        var conflicts = _hotkeys?.RegisterDefaults() ?? Array.Empty<string>();
+        _ = SaveSettingsAsync(); return conflicts;
+    }
+
     public static bool TrySetHotkey(string action, string shortcut, out string error)
     {
         if (_hotkeys is null) { error = "快捷键服务尚未启动。"; return false; }
@@ -209,6 +246,7 @@ public static class AppController
 
     public static void ShowTxtReader()
     {
+        if (_isEmergencyStopping) return;
         if (TxtReader.Document is null) return;
         if (_readerWindow is null)
         {

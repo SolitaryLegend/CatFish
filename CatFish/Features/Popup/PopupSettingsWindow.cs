@@ -17,6 +17,7 @@ public sealed class PopupSettingsWindow : Window
     private readonly ToggleButton _aspectLock = new() { Content = "🔗", Width = 32, Height = 28, FontSize = 15, IsChecked = AppController.Settings.PopupAspectRatioLocked, Margin = new Thickness(0, 0, 15, 8), VerticalAlignment = VerticalAlignment.Bottom };
     private readonly ComboBox _backgroundChoice = new() { ItemsSource = PopupBackgrounds.Items, DisplayMemberPath = nameof(PopupBackground.Name) };
     private readonly Image _backgroundPreview = new() { Height = 180, Stretch = Stretch.Uniform, Margin = new Thickness(0, 12, 0, 10) };
+    private readonly PopupBackgroundPlayer _previewPlayer;
     private double _aspectRatio;
     private bool _updatingDimensions;
     private readonly TextBox _hideAfter = new() { Width = 60 };
@@ -28,7 +29,7 @@ public sealed class PopupSettingsWindow : Window
     private readonly Slider _blur = new() { Minimum = 0, Maximum = 18, Value = AppController.Settings.PopupBlurRadius };
     private readonly CheckBox _locked = new() { Content = "锁定广告位置", IsChecked = AppController.Settings.PopupLocked };
     private readonly CheckBox _closeApplication = new() { Content = "关闭广告时，同时关闭所选应用", IsChecked = AppController.Settings.PopupCloseSelectedApplication,
-        ToolTip = "默认关闭。勾选后向所选窗口发送正常关闭请求，不强制结束进程；应用可提示保存或退至托盘。紧急恢复不会关闭应用。" };
+        ToolTip = "控制普通关闭广告时的行为。紧急停止始终向所选应用发送关闭请求；应用可提示保存或退至托盘。" };
     private readonly CheckBox _auto = new() { Content = "定时显示" };
     private readonly TextBlock _status = ViewFactory.Status();
     private readonly System.Windows.Threading.DispatcherTimer _scheduleTimer = new();
@@ -43,7 +44,7 @@ public sealed class PopupSettingsWindow : Window
         _width.Text = settings.PopupWidth.ToString(); _height.Text = settings.PopupHeight.ToString();
         _aspectRatio = settings.PopupWidth / (double)(settings.PopupHeight - PopupLayout.TitleBarHeight);
         _backgroundChoice.SelectedItem = PopupBackgrounds.Items.FirstOrDefault(background => background.Id == settings.PopupBackground) ?? PopupBackgrounds.Items[0];
-        _backgroundPreview.Source = PopupBackgrounds.Load(settings.PopupBackground);
+        _previewPlayer = new(_backgroundPreview); _previewPlayer.SetBackground(settings.PopupBackground);
         _hideAfter.Text = settings.PopupAutoHideSeconds.ToString(); _frequency.Text = settings.PopupFrequencySeconds.ToString();
         _monitor.ItemsSource = MonitorService.GetMonitors(); _monitor.SelectedIndex = Math.Clamp(settings.PopupMonitorIndex, 0, Math.Max(0, _monitor.Items.Count - 1));
         ViewFactory.Shell(this);
@@ -58,7 +59,7 @@ public sealed class PopupSettingsWindow : Window
         position.Children.Add(row);
         var dimensions = new StackPanel { Orientation = Orientation.Horizontal };
         dimensions.Children.Add(Field("宽度", _width)); dimensions.Children.Add(_aspectLock); dimensions.Children.Add(Field("高度", _height)); position.Children.Add(dimensions);
-        position.Children.Add(ViewFactory.Action("恢复 1:1 背景", (_, _) => RestoreSquareSize()));
+        position.Children.Add(ViewFactory.Action("适应原图比例", (_, _) => RestoreBackgroundSize()));
         var timing = new WrapPanel(); timing.Children.Add(Field("自动隐藏 / 秒", _hideAfter)); timing.Children.Add(Field("弹出间隔 / 秒", _frequency)); position.Children.Add(timing);
         position.Children.Add(ViewFactory.Muted("自动隐藏填 0 表示常驻；嵌入播放时暂停隐藏。")); position.Children.Add(_locked);
         position.Children.Add(_closeApplication);
@@ -66,7 +67,7 @@ public sealed class PopupSettingsWindow : Window
         style.Children.Add(SliderLine("上下遮罩高度", _gradient)); style.Children.Add(SliderLine("左右遮罩宽度", _sideGradient)); style.Children.Add(SliderLine("背景模糊半径", _blur));
         style.Children.Add(ViewFactory.Muted("四边遮罩覆盖视频；降低视频不透明度可透出广告背景。滑块实时预览，点击保存保留。"));
         var backgrounds = new StackPanel(); backgrounds.Children.Add(_backgroundChoice); backgrounds.Children.Add(_backgroundPreview);
-        backgrounds.Children.Add(ViewFactory.Muted("五款背景统一为 1:1 正方形；解锁宽高后整图随窗口缩放，不裁剪。也可在顶部点击「背景」轮换。"));
+        backgrounds.Children.Add(ViewFactory.Muted("背景保留原图比例，GIF 自动循环播放。解锁后可自由调整窗口，图片等比完整显示。也可在顶部点击「背景」轮换。"));
         layout.Children.Add(ViewFactory.Tabs(("位置与时间", ViewFactory.Card(position)), ("遮罩样式", ViewFactory.Card(style)), ("背景风格", ViewFactory.Card(backgrounds))));
         Content = ViewFactory.Frame(this, layout, Title);
         UpdateAspectButton();
@@ -78,14 +79,15 @@ public sealed class PopupSettingsWindow : Window
         _backgroundChoice.SelectionChanged += (_, _) =>
         {
             if (_backgroundChoice.SelectedItem is not PopupBackground background) return;
-            settings.PopupBackground = background.Id; _backgroundPreview.Source = PopupBackgrounds.Load(background.Id);
+            settings.PopupBackground = background.Id; _previewPlayer.SetBackground(background.Id);
+            if (_aspectLock.IsChecked == true) RestoreBackgroundSize();
             AdvertisementPopupWindow.ApplyOpenSettings(); _status.Text = "背景已预览，点击保存保留。";
         };
         foreach (var slider in new[] { _opacity, _videoOpacity, _gradient, _sideGradient, _blur }) slider.ValueChanged += (_, _) => PreviewAppearance();
         _scheduleTimer.Tick += (_, _) => AdvertisementPopupWindow.ShowGlobal();
         _auto.Checked += (_, _) => { if (!SaveSettings()) { _auto.IsChecked = false; return; } _scheduleTimer.Interval = TimeSpan.FromSeconds(settings.PopupFrequencySeconds); _scheduleTimer.Start(); };
         _auto.Unchecked += (_, _) => _scheduleTimer.Stop();
-        Closed += (_, _) => { _scheduleTimer.Stop(); if (_active == this) _active = null; };
+        Closed += (_, _) => { _previewPlayer.Dispose(); _scheduleTimer.Stop(); if (_active == this) _active = null; };
     }
 
     private static UIElement Field(string label, Control control)
@@ -123,18 +125,19 @@ public sealed class PopupSettingsWindow : Window
         _aspectLock.Content = locked ? "🔗" : "↔";
         _aspectLock.ToolTip = locked ? "背景区域比例已锁定，标题栏不参与联动；点击解锁" : "自由调整宽高；点击锁定当前背景比例";
     }
-    internal void RestoreSquareSize()
+    internal void RestoreBackgroundSize()
     {
         var width = int.TryParse(_width.Text, out var parsed) ? parsed : AppController.Settings.PopupWidth;
-        var size = PopupLayout.SquareSize(width);
+        var size = PopupLayout.BackgroundSize(width, AppController.Settings.PopupBackground);
         _updatingDimensions = true;
         try
         {
             _width.Text = size.Width.ToString(); _height.Text = size.Height.ToString();
-            _aspectLock.IsChecked = true; _aspectRatio = 1;
+            var source = PopupBackgrounds.Load(AppController.Settings.PopupBackground);
+            _aspectLock.IsChecked = true; _aspectRatio = source.PixelWidth / (double)source.PixelHeight;
             var settings = AppController.Settings;
             settings.PopupWidth = size.Width; settings.PopupHeight = size.Height; settings.PopupAspectRatioLocked = true;
-            AdvertisementPopupWindow.ApplyOpenSettings(); _status.Text = "背景已恢复 1:1，标题栏另占 30 像素；点击保存保留。";
+            AdvertisementPopupWindow.ApplyOpenSettings(); _status.Text = "已按原图比例调整，标题栏另占 30 像素；点击保存保留。";
         }
         finally { _updatingDimensions = false; }
     }
@@ -179,9 +182,9 @@ public sealed class PopupSettingsWindow : Window
     {
         if (_active is not null) _active._backgroundChoice.SelectedItem = PopupBackgrounds.Items.FirstOrDefault(background => background.Id == AppController.Settings.PopupBackground) ?? PopupBackgrounds.Items[0];
     }
-    public static void EmergencyStop()
+    public static void EmergencyStop(bool closeSelectedApplications = true)
     {
         if (_active is not null) { _active._scheduleTimer.Stop(); _active._auto.IsChecked = false; }
-        AdvertisementPopupWindow.CloseAll();
+        AdvertisementPopupWindow.CloseAll(closeSelectedApplications);
     }
 }

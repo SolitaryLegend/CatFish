@@ -28,7 +28,7 @@ internal sealed class VideoEdgeOverlay : Window
         var root = new Grid { IsHitTestVisible = false };
         foreach (var (surface, image) in new[] { (_videoBlend, _videoImage), (_left, _leftImage), (_right, _rightImage), (_top, _topImage), (_bottom, _bottomImage) })
         {
-            var canvas = new Canvas { ClipToBounds = true }; canvas.Children.Add(image);
+            var canvas = new Canvas { ClipToBounds = true, Background = Brushes.Black }; canvas.Children.Add(image);
             surface.Children.Add(canvas); root.Children.Add(surface);
         }
         Content = root;
@@ -88,6 +88,11 @@ internal sealed class VideoEdgeOverlay : Window
             Math.Max(1, (int)Math.Round(end.Y - origin.Y)), NativeMethods.SwpNoActivate);
         UpdateLayout();
         ((UIElement)Content).InvalidateVisual();
+    }
+
+    internal void UpdateFrame(ImageSource source)
+    {
+        foreach (var image in new[] { _topImage, _bottomImage, _leftImage, _rightImage, _videoImage }) image.Source = source;
     }
 
     private static void ApplyBackground(Image image, Image background, double offsetX, double offsetY, double opacity, int blurRadius)

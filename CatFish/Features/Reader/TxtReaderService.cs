@@ -78,7 +78,7 @@ public sealed class TxtReaderService : IDisposable
             Settings.LastFile = loaded.Path; RebuildPages();
             Status = $"已打开 {System.IO.Path.GetFileName(loaded.Path)} · 已暂停" +
                 (changed ? " · 文本已更新" : "") + (loaded.IsLarge ? " · 大文件模式（按需分页，上限 32 MB）" : "");
-            await PersistAsync(); return true;
+            await PersistAsync(); return !request.IsCancellationRequested && !_disposed;
         }
         catch (OperationCanceledException) { return false; }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
@@ -152,6 +152,10 @@ public sealed class TxtReaderService : IDisposable
         if (previous is { } time && timestamp > time) Advance((timestamp - time).TotalSeconds);
     }
     public void Pause() { PauseCore(); Status = "已暂停，保留当前位置"; OnChanged(); _ = PersistAsync(); }
+    public void EmergencyStop()
+    {
+        _load?.Cancel(); IsLoading = false; Pause();
+    }
     public void Stop() { PauseCore(); ResetTiming(); Status = "已停止，保留当前段落"; OnChanged(); _ = PersistAsync(); }
     private void ResetTiming() { _elapsed = 0; ScrollOffset = 0; if (IsPlaying) _clock.Restart(); Frame?.Invoke(this, EventArgs.Empty); }
 

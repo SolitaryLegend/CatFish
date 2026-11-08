@@ -138,6 +138,11 @@ internal static class Program
             switching.DropDownItems[0].Select(); Preview(switching.DropDown, "tray-themed-switching.png");
             previewMain.ExitRequested = true; previewMain.Close(); return;
         }
+        if (args is ["--emergency-stop"])
+        {
+            EmergencyStopRegression.Run(Check);
+            Console.WriteLine($"TOTAL: {_passed} emergency stop checks passed."); return;
+        }
         if (args is ["--hotkeys"])
         {
             HotkeyRegression.Run(Check, Render);

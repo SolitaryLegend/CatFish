@@ -78,6 +78,12 @@ internal static class MusicRegression
         var pending = service.PlayAsync(0); service.Stop(); fake.Block.SetResult(new Uri("https://audio.example/late.mp3")); await pending;
         check(!service.IsPlaying && !service.IsOpening, "stop cancels a pending resolution and late results cannot autoplay"); fake.Block = null;
         fake.LoadGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var emergencyLoad = service.LoadAsync(); service.SetSleep(15); service.EmergencyStop();
+        var retainedQueue = service.Queue;
+        fake.LastGate!.SetResult(new(Tracks(30), date, false)); fake.LoadGate = null; await emergencyLoad;
+        check(!service.IsLoading && !service.IsPlaying && !service.IsOpening && service.StopAt is null
+            && ReferenceEquals(retainedQueue, service.Queue), "emergency stop cancels loading and sleep timers and ignores late music results");
+        fake.LoadGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
         var older = service.LoadAsync(); fake.LoadGate = null;
         service.Settings.Count = 10; await service.LoadAsync(); fake.LastGate!.SetResult(new(Tracks(30), date, false)); await older;
         check(service.Queue.Count == 10 && !service.IsLoading, "late old recommendations cannot replace the latest source request");

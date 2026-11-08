@@ -198,6 +198,10 @@ public sealed class MusicPlayerService : IDisposable
         IsPlaying = false; Status = "已暂停。"; Notify();
     }
     public void Stop() { CancelPlayback(); Status = "已停止。"; Notify(); }
+    public void EmergencyStop()
+    {
+        _load?.Cancel(); IsLoading = false; StopAt = null; Stop();
+    }
     public void Seek(double seconds)
     {
         if (_audio is not null && double.IsFinite(seconds) && Duration > TimeSpan.Zero)
