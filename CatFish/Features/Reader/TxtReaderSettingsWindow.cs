@@ -45,7 +45,7 @@ public sealed class TxtReaderSettingsWindow : Window
     public TxtReaderSettingsWindow()
     {
         _reader = AppController.TxtReader; _settings = _reader.Settings;
-        Title = "单行阅读 · CatFish"; Width = 430; Height = 580;
+        Title = "单行阅读 · CatFish"; Width = 430; Height = 610;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ViewFactory.Shell(this);
         FontSize = 11;
@@ -61,6 +61,8 @@ public sealed class TxtReaderSettingsWindow : Window
         links.Children.Add(CompactAction("快捷键", (_, _) => AppController.ShowFeature("hotkeys", () => new HotkeySettingsWindow()), true));
         DockPanel.SetDock(links, Dock.Right); footer.Children.Add(links); footer.Children.Add(_status); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         var tabs = ViewFactory.Tabs(("阅读", ReadingPage()), ("文字与浮窗", AppearancePage()));
+        foreach (TabItem tab in tabs.Items)
+            if (tab.Content is ScrollViewer page) page.VerticalScrollBarVisibility = ScrollBarVisibility.Hidden;
         tabs.SelectionChanged += (_, e) => { if (ReferenceEquals(e.Source, tabs) && _colorPopup is not null) _colorPopup.IsOpen = false; };
         root.Children.Add(tabs);
         Content = ViewFactory.Frame(this, root, "单行阅读");

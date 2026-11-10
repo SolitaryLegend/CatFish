@@ -76,7 +76,11 @@ internal static class PopupRegression
             var originalStyle = NativeMethods.GetWindowLongPtr(target.Handle, NativeMethods.GwlStyle);
             var originalExtended = NativeMethods.GetWindowLongPtr(target.Handle, NativeMethods.GwlExStyle);
             var originalPlacement = Placement(target.Handle);
+            CheckEmbedTargets(check, child, target, second);
+            CheckYoukuLayer(check, child, target, second);
+            CheckFailedRestore(check, child, second);
             popup.Show(); Pump(100);
+            CheckCustomWindowDrop(check, popup, second);
             check(Math.Abs(popup.Width - 480) < 1 && Math.Abs(popup.Height - 633) < 1, $"default window follows the source image ratio with a separate title bar (actual {popup.Width} by {popup.Height})");
             CheckSizeLink(check, render, popup);
             foreach (var corner in new[] { "BottomRight", "BottomLeft", "TopRight", "TopLeft" })
@@ -107,15 +111,18 @@ internal static class PopupRegression
                 "default background retains the source aspect ratio");
             check(Math.Abs(image.ActualWidth / image.ActualHeight - 320d / 402) < .002, "default image area excludes the title bar from its ratio within screen-pixel rounding");
             check(image.Stretch == Stretch.Uniform, "custom rectangular layouts display the complete image without distortion");
-            check(PopupBackgrounds.Items.Select(item => item.Asset).Order().SequenceEqual(
-                new[] { "gfcb.gif", "jd1111.jpg", "workbuddy.png", "wxzjz.gif", "xlxxj_320x402.png", "纳米Work.png" }.Order()),
-                "the background list contains all six supplied files");
+            check(PopupBackgrounds.Items.Select(item => item.Name).SequenceEqual(
+                new[] { "找好服网.gif", "鬼服超变.gif", "Workbuddy.png", "无限转九职.gif", "修罗吸血剑.png", "纳米Work.png" }),
+                "the background list displays the supplied file names in their existing slots");
             foreach (var background in PopupBackgrounds.Items)
             {
                 var source = PopupBackgrounds.Load(background.Id);
                 check(source.PixelWidth == 320 && source.PixelHeight == 402, background.Id + " retains its original pixel dimensions");
             }
             render(popup, "advertisement-background-mask.png");
+            // Use a static background for pixel comparisons taken at different times.
+            settings.PopupBackground = "workbuddy";
+            popup.ApplySettings(); Pump(100);
             using var emptyFrame = CaptureBitmap(popup);
             var embedded = popup.TryEmbed(target);
             var embedStatus = (TextBlock)typeof(AdvertisementPopupWindow).GetField("_status", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(popup)!;
@@ -508,6 +515,34 @@ internal static class PopupRegression
         }
     }
 
+    private static void CheckFailedRestore(Action<bool, string> check, Process child, WindowTarget target)
+    {
+        var prepared = ProbeCommand(child, "prepare-close:cancel:normal");
+        var popup = new AdvertisementPopupWindow(new AppSettings { PopupCorner = "TopLeft", PopupCloseSelectedApplication = true });
+        try
+        {
+            popup.Show(); Pump(60);
+            check(popup.TryEmbed(target), "the restore failure probe embeds before changing the native window state");
+            NativeMethods.ShowWindowAsync(target.Handle, 0); Pump(250);
+            check(popup.Host.Visibility == Visibility.Collapsed && popup.Host.Session.Handle == nint.Zero
+                && NativeMethods.GetParent(target.Handle) == nint.Zero,
+                "a window that stops showing in the host is released and the empty host is hidden");
+
+            check(popup.TryEmbed(target), "the recovered window can be embedded again");
+            // An invalid length makes SetWindowPlacement fail after SetParent has already released the window.
+            var placement = Placement(target.Handle);
+            placement.Length = 0;
+            typeof(EmbeddedWindowSession).GetField("_placement", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .SetValue(popup.Host.Session, placement);
+            popup.Close(); Pump(150);
+            var report = ProbeCommand(child, "close-probe");
+            check(!popup.IsVisible && report.CloseCount == 0 && report.Current is { Parent: 0, IsVisible: true },
+                "a failed placement restore releases the advertisement without closing the independent window");
+            check(SameBounds(report.Current, prepared.Normal), "the placement fallback restores the independent window's desktop bounds");
+        }
+        finally { if (popup.IsVisible) popup.Close(); }
+    }
+
     private static ProbeReport ProbeCommand(Process child, string command)
     {
         child.StandardInput.WriteLine(command); child.StandardInput.Flush();
@@ -531,9 +566,207 @@ internal static class PopupRegression
         var placement = new NativeMethods.WindowPlacement { Length = Marshal.SizeOf<NativeMethods.WindowPlacement>() };
         NativeMethods.GetWindowPlacement(handle, ref placement); return placement;
     }
+    private static void CheckEmbedTargets(Action<bool, string> check, Process child, WindowTarget first, WindowTarget second)
+    {
+        var main = first with { Title = "腾讯视频", ProcessName = "QQLive" };
+        var helper = second with { Title = "ViewsPlayerPluginWnd", ProcessName = "QQLive" };
+        var player = second with { Title = main.Title, ProcessName = main.ProcessName };
+        check(PopupWindowTargets.FilterPickerTargets([main, helper]).SequenceEqual([main]),
+            "the Tencent Video helper is omitted from advertisement targets");
+        check(PopupWindowTargets.FilterPickerTargets([player, main]).SequenceEqual([player]),
+            "two visible Tencent Video windows with the same title produce one picker entry");
+        var otherProcess = player with { ProcessId = main.ProcessId + 1, Title = "腾讯视频播放窗口" };
+        check(PopupWindowTargets.FilterPickerTargets([main, otherProcess]).SequenceEqual([main]),
+            "Tencent Video provides one picker entry even across different processes and titles");
+        var sameTitle = player with { ProcessName = "other-process" };
+        check(PopupWindowTargets.FilterPickerTargets([sameTitle, main]).SequenceEqual([main])
+            && PopupWindowTargets.FilterPickerTargets([sameTitle]).SequenceEqual([sameTitle]),
+            "the real Tencent Video app takes precedence over an identically named entry when present");
+        check(PopupWindowTargets.ResolveDropTarget(main.Handle, [player, main]) == main,
+            "dragging a real Tencent Video window preserves its exact handle despite picker deduplication");
+        NativeMethods.ShowWindowAsync(main.Handle, NativeMethods.SwMinimize); Pump(100);
+        try
+        {
+            check(NativeMethods.IsIconic(main.Handle) && PopupWindowTargets.FilterPickerTargets([main, player]).SequenceEqual([player]),
+                "an active Tencent Video window supersedes its minimized same-title entry");
+            check(PopupWindowTargets.FilterPickerTargets([main, helper]).SequenceEqual([main]),
+                "Tencent Video remains selectable when its only usable window is minimized");
+        }
+        finally { NativeMethods.ShowWindowAsync(main.Handle, NativeMethods.SwRestore); Pump(100); }
+
+        SetPlayerSurface(child, true);
+        NativeMethods.GetCursorPos(out var cursor);
+        NativeMethods.GetWindowRect(helper.Handle, out var originalSurfaceBounds);
+        var surfaceTopmost = NativeMethods.GetWindowLongPtr(helper.Handle, NativeMethods.GwlExStyle).ToInt64() & NativeMethods.WsExTopmost;
+        var popup = new AdvertisementPopupWindow(new AppSettings { PopupCorner = "TopLeft" });
+        try
+        {
+            check(PopupWindowTargets.ResolveDropTarget(helper.Handle, [helper, main]) == main,
+                "a drop from the owned Tencent Video surface resolves to the player window");
+            check(PopupWindowTargets.ResolveDropTarget(helper.Handle, [main]) == main,
+                "the Tencent Video surface can resolve its owner even if it is absent from the current list");
+            popup.Show(); Pump(100);
+            var embedded = popup.TryEmbed(main);
+            var status = (TextBlock)typeof(AdvertisementPopupWindow)
+                .GetField("_status", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(popup)!;
+            check(embedded, "the Tencent Video owner embeds with its separate player surface: " + status.Text); Pump(100);
+            NativeMethods.GetWindowRect(main.Handle, out var playerBounds);
+            NativeMethods.SetWindowPos(helper.Handle, nint.Zero, playerBounds.Left, playerBounds.Top,
+                playerBounds.Right - playerBounds.Left, playerBounds.Bottom - playerBounds.Top, NativeMethods.SwpNoActivate | 0x4);
+            Pump(150);
+            check(!NativeMethods.IsChild(main.Handle, helper.Handle)
+                && NativeMethods.GetWindow(helper.Handle, NativeMethods.GwOwner) == main.Handle,
+                "the Tencent Video renderer keeps its original top-level ownership while embedded");
+            NativeMethods.GetWindowRect(helper.Handle, out var bounds);
+            SetCursorPos((bounds.Left + bounds.Right) / 2, (bounds.Top + bounds.Bottom) / 2);
+            NativeMethods.SendInput(2, [new() { Mouse = new() { Flags = 2 } }, new() { Mouse = new() { Flags = 4 } }], Marshal.SizeOf<NativeMethods.Input>());
+            Pump(100);
+            var click = child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(3)).GetAwaiter().GetResult();
+            check(click == "surface-click", "real mouse input reaches the embedded player's surface through the advertisement mask");
+            CheckPickerLayer(check, popup);
+            popup.ClearApp(); Pump(100);
+            check(!NativeMethods.IsChild(main.Handle, helper.Handle)
+                && NativeMethods.GetWindow(helper.Handle, NativeMethods.GwOwner) == main.Handle
+                && (NativeMethods.GetWindowLongPtr(helper.Handle, NativeMethods.GwlExStyle).ToInt64() & NativeMethods.WsExTopmost) == surfaceTopmost,
+                "restoring Tencent Video restores the renderer's original desktop layer");
+        }
+        finally
+        {
+            popup.ClearApp();
+            popup.Close();
+            NativeMethods.SetWindowPos(helper.Handle, nint.Zero, originalSurfaceBounds.Left, originalSurfaceBounds.Top,
+                originalSurfaceBounds.Right - originalSurfaceBounds.Left, originalSurfaceBounds.Bottom - originalSurfaceBounds.Top,
+                NativeMethods.SwpNoActivate | 0x4);
+            SetCursorPos(cursor.X, cursor.Y);
+            SetPlayerSurface(child, false);
+        }
+    }
+
+    private static void SetPlayerSurface(Process child, bool enabled)
+    {
+        child.StandardInput.WriteLine(enabled ? "player-surface" : "normal-window"); child.StandardInput.Flush();
+        var ready = child.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(3)).GetAwaiter().GetResult();
+        if (ready != "surface-ready") throw new InvalidOperationException("Could not change playback window ownership.");
+    }
+
+    private static void CheckYoukuLayer(Action<bool, string> check, Process child, WindowTarget first, WindowTarget second)
+    {
+        var player = first with { ProcessName = "YOUKU" };
+        var controls = second with { ProcessName = "YOUKU" };
+        NativeMethods.GetWindowRect(controls.Handle, out var original);
+        var originalStyle = NativeMethods.GetWindowLongPtr(controls.Handle, NativeMethods.GwlExStyle);
+        var settings = new AppSettings { PopupCorner = "TopLeft" };
+        var popup = new AdvertisementPopupWindow(settings);
+        void MoveControls(NativeMethods.Rect bounds) =>
+            NativeMethods.SetWindowPos(controls.Handle, nint.Zero, bounds.Left, bounds.Top, bounds.Right - bounds.Left,
+                bounds.Bottom - bounds.Top, NativeMethods.SwpNoActivate | NativeMethods.SwpNoZOrder);
+        bool LayersMatch() => NativeMethods.GetWindowRect(player.Handle, out var videoBounds)
+            && NativeMethods.GetWindowRect(controls.Handle, out var controlsBounds) && videoBounds.Equals(controlsBounds);
+
+        SetPlayerSurface(child, true);
+        try
+        {
+            NativeMethods.GetWindowRect(player.Handle, out var desktopBounds);
+            MoveControls(desktopBounds);
+            NativeMethods.SetWindowLongPtr(controls.Handle, NativeMethods.GwlExStyle,
+                new nint(originalStyle.ToInt64() | NativeMethods.WsExLayered));
+            NativeMethods.SetLayeredWindowAttributes(controls.Handle, 0, 255, NativeMethods.LwaAlpha);
+            Pump(100);
+            check(PopupWindowTargets.FilterPickerTargets([player, controls]).SequenceEqual([controls]),
+                "a Youku playback pair appears once under its playback entry");
+            popup.Show(); Pump(80);
+            check(popup.TryEmbed(controls), "selecting Youku playback embeds its video window"); Pump(180);
+            check(popup.Host.Session.Handle == player.Handle && !NativeMethods.IsChild(player.Handle, controls.Handle)
+                && NativeMethods.GetWindow(controls.Handle, NativeMethods.GwOwner) == player.Handle
+                && LayersMatch(), "the Youku controls stay top-level and align with the embedded video");
+            settings.PopupCorner = "TopRight"; settings.PopupWidth = 420; settings.PopupHeight = 430;
+            popup.ApplySettings(); Pump(180);
+            check(LayersMatch(), "Youku controls follow a move and resize of the advertisement");
+            popup.ClearApp(); Pump(100);
+            NativeMethods.GetWindowRect(controls.Handle, out var restored);
+            check(restored.Equals(desktopBounds) && NativeMethods.GetWindow(controls.Handle, NativeMethods.GwOwner) == player.Handle
+                && (NativeMethods.GetWindowLongPtr(controls.Handle, NativeMethods.GwlExStyle).ToInt64() & NativeMethods.WsExTopmost)
+                    == (originalStyle.ToInt64() & NativeMethods.WsExTopmost),
+                "restoring Youku returns its controls to their original desktop bounds and window order");
+        }
+        finally
+        {
+            popup.Close();
+            NativeMethods.SetWindowLongPtr(controls.Handle, NativeMethods.GwlExStyle, originalStyle);
+            MoveControls(original);
+            SetPlayerSurface(child, false);
+        }
+    }
+
+    private static void CheckPickerLayer(Action<bool, string> check, AdvertisementPopupWindow popup)
+    {
+        var overlay = (VideoEdgeOverlay)typeof(AdvertisementPopupWindow)
+            .GetField("_overlay", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(popup)!;
+        var dialogOnTop = false;
+        var maskHidden = false;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            var picker = Application.Current.Windows.OfType<CatFish.UI.WindowPickerWindow>().Single(window => window.Owner == popup);
+            try
+            {
+                popup.ApplySettings();
+                maskHidden = !overlay.IsVisible;
+                var handle = new WindowInteropHelper(picker).Handle;
+                NativeMethods.GetWindowRect(handle, out var bounds);
+                var hit = NativeMethods.WindowFromPoint(new() { X = (bounds.Left + bounds.Right) / 2, Y = (bounds.Top + bounds.Bottom) / 2 });
+                dialogOnTop = NativeMethods.GetAncestor(hit, 2) == handle;
+            }
+            finally { picker.DialogResult = false; }
+        };
+        timer.Start();
+        typeof(AdvertisementPopupWindow).GetMethod("SelectWindow", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(popup, null);
+        check(dialogOnTop && maskHidden && overlay.IsVisible, "the chooser stays above video and mask, then restores the mask when cancelled");
+    }
+
+    private static void CheckCustomWindowDrop(Action<bool, string> check, AdvertisementPopupWindow popup, WindowTarget target)
+    {
+        NativeMethods.GetWindowRect(target.Handle, out var source);
+        NativeMethods.GetWindowRect(new WindowInteropHelper(popup).Handle, out var destination);
+        NativeMethods.GetCursorPos(out var cursor);
+        var x = source.Left + 80;
+        var y = source.Top + 100;
+        var endX = destination.Left + 40;
+        var endY = destination.Top + 150;
+        var buttonDown = Forms.SystemInformation.MouseButtonsSwapped ? 8u : 2u;
+        var buttonUp = Forms.SystemInformation.MouseButtonsSwapped ? 16u : 4u;
+        void SendMouse(uint flags) => NativeMethods.SendInput(1, [new() { Mouse = new() { Flags = flags } }], Marshal.SizeOf<NativeMethods.Input>());
+
+        try
+        {
+            NativeMethods.SetWindowPos(target.Handle, nint.Zero, 0, 0, 0, 0,
+                NativeMethods.SwpNoMove | NativeMethods.SwpNoSize | NativeMethods.SwpNoActivate);
+            SetCursorPos(x, y); SendMouse(buttonDown); Pump(100);
+            SetCursorPos(endX, endY); SendMouse(buttonUp); Pump(100);
+            check(popup.Host.Session.Handle == nint.Zero, "a pointer drag without window movement does not embed");
+
+            SetCursorPos(x, y); SendMouse(buttonDown); Pump(100);
+            NativeMethods.SetWindowPos(target.Handle, nint.Zero, source.Left + endX - x, source.Top + endY - y, 0, 0,
+                NativeMethods.SwpNoSize | NativeMethods.SwpNoActivate);
+            SetCursorPos(endX, endY); Pump(100);
+            check(popup.Host.Session.Handle == nint.Zero, "custom window movement waits for the mouse button to be released");
+            SendMouse(buttonUp); Pump(100);
+            check(popup.Host.Session.Handle == target.Handle, "a custom window drag embeds without a native move-end event");
+        }
+        finally
+        {
+            SendMouse(buttonUp);
+            popup.ClearApp();
+            NativeMethods.SetWindowPos(target.Handle, nint.Zero, source.Left, source.Top, 0, 0,
+                NativeMethods.SwpNoSize | NativeMethods.SwpNoActivate);
+            SetCursorPos(cursor.X, cursor.Y); Pump(100);
+        }
+    }
+
     private static void CheckAnimation(Action<bool, string> check, Action<Window, string> render)
     {
-        foreach (var (id, count) in new[] { ("gfcb", 6), ("wxzjz", 5) })
+        foreach (var (id, count) in new[] { (PopupBackgrounds.DefaultId, 8), ("gfcb", 6), ("wxzjz", 5) })
         {
             var animation = PopupBackgrounds.LoadAnimation(id);
             check(animation.Frames.Count == count && animation.Frames.All(frame => frame.IsFrozen), id + " decodes all GIF frames");
@@ -664,6 +897,12 @@ internal static class PopupRegression
             while (Console.ReadLine() is { } command)
             {
                 if (command == "drop") first.BeginInvoke(new Action(() => NotifyWinEvent(0xB, first.Handle, 0, 0)));
+                else if (command is "player-surface" or "normal-window") first.BeginInvoke(new Action(() =>
+                {
+                    second.Owner = command == "player-surface" ? first : null;
+                    second.Text = command == "player-surface" ? "ViewsPlayerPluginWnd" : "Popup target B";
+                    Console.WriteLine("surface-ready");
+                }));
                 else if (command == "cancel-close") first.BeginInvoke(new Action(() => { second.CloseBehavior = "cancel"; Console.WriteLine("cancel-close-ready"); }));
                 else if (command == "allow-close") first.BeginInvoke(new Action(() => { second.CloseBehavior = "allow"; Console.WriteLine("allow-close-ready"); }));
                 else if (command.StartsWith("prepare-close:")) first.BeginInvoke(new Action(() =>
@@ -740,6 +979,7 @@ internal static class PopupRegression
 
         protected override void WndProc(ref Forms.Message message)
         {
+            if (message.Msg == 0x201 && Text == "ViewsPlayerPluginWnd") Console.WriteLine("surface-click");
             if (message.Msg == 0x5)
             {
                 _lastSizeType = message.WParam.ToInt32();

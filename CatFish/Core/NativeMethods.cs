@@ -8,9 +8,11 @@ public static class NativeMethods
     public const int GwlExStyle = -20; public const long WsExLayered = 0x00080000L, WsExTopmost = 0x00000008L;
     public const int GwlStyle = -16, DwmwaCloaked = 14;
     public const long WsChild = 0x40000000L, WsExToolWindow = 0x00000080L, WsExNoActivate = 0x08000000L;
-    public const uint LwaAlpha = 2, LwaColorKey = 1, GwOwner = 4, SwMinimize = 6, SwRestore = 9;
-    public const uint SwpNoSize = 1, SwpNoMove = 2, SwpNoActivate = 0x10;
-    public const uint SwpFrameChanged = 0x20, SwpNoCopyBits = 0x100, SwpAsyncWindowPos = 0x4000;
+    public const uint LwaAlpha = 2, LwaColorKey = 1, GwPrevious = 3, GwOwner = 4, GaParent = 1;
+    public const uint SwShowNoActivate = 4, SwMinimize = 6, SwRestore = 9;
+    public const uint SwpNoSize = 1, SwpNoMove = 2, SwpNoZOrder = 4, SwpNoActivate = 0x10;
+    public const uint SwpFrameChanged = 0x20, SwpNoCopyBits = 0x100, SwpNoOwnerZOrder = 0x200;
+    public const uint SwpNoSendChanging = 0x400, SwpAsyncWindowPos = 0x4000;
     public const uint RdwInvalidate = 0x1, RdwErase = 0x4, RdwAllChildren = 0x80, RdwFrame = 0x400;
     public const long WsPopup = 0x80000000L, WsCaption = 0x00C00000L, WsThickFrame = 0x00040000L;
     public const long WsMinimize = 0x20000000L, WsMaximize = 0x01000000L;
@@ -23,6 +25,9 @@ public static class NativeMethods
     [DllImport("user32.dll")] public static extern bool GetWindowPlacement(nint handle, ref WindowPlacement placement);
     [DllImport("user32.dll")] public static extern bool SetWindowPlacement(nint handle, ref WindowPlacement placement);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out NativePoint point);
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] public static extern nint WindowFromPoint(NativePoint point);
+    [DllImport("user32.dll")] public static extern nint GetAncestor(nint handle, uint flags);
     public delegate void WinEventProc(nint hook, uint eventType, nint window, int objectId, int childId, uint thread, uint time);
     [DllImport("user32.dll")] public static extern nint SetWinEventHook(uint eventMin, uint eventMax, nint module, WinEventProc callback, uint process, uint thread, uint flags);
     [DllImport("user32.dll")] public static extern bool UnhookWinEvent(nint hook);

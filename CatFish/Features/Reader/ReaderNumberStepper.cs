@@ -31,17 +31,17 @@ internal sealed class ReaderNumberStepper : Border
     private double _lastMinimum = double.NaN, _lastMaximum = double.NaN;
 
     public ReaderNumberStepper(string name, string caption, Func<double> read, Func<double> minimum, Func<double> maximum,
-        Action<double> change, Action<string>? validation = null)
+        Action<double> change, Action<string>? validation = null, bool compact = false)
     {
         _read = read; _minimum = minimum; _maximum = maximum; _change = change; _validation = validation; _caption = caption;
-        Height = 28; Background = Brushes.White; BorderBrush = new SolidColorBrush(Color.FromRgb(218, 229, 224));
+        Height = compact ? 24 : 28; Background = Brushes.White; BorderBrush = new SolidColorBrush(Color.FromRgb(218, 229, 224));
         BorderThickness = new Thickness(1); CornerRadius = new CornerRadius(4);
         _box = new TextBox { Name = name + "Input", Text = Format(read()), BorderThickness = new Thickness(0),
-            Background = Brushes.Transparent, Padding = new Thickness(4, 1, 20, 1), FontSize = 11 };
+            Background = Brushes.Transparent, Padding = compact ? new Thickness(3, 1, 15, 1) : new Thickness(4, 1, 20, 1), FontSize = 11 };
         System.Windows.Automation.AutomationProperties.SetName(_box, caption);
         _up = Arrow(name + "Increase", "▴", "增大" + caption, 1);
         _down = Arrow(name + "Decrease", "▾", "减小" + caption, -1);
-        var arrows = new Grid { Width = 17, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 1, 1, 1) };
+        var arrows = new Grid { Width = compact ? 13 : 17, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 1, 1, 1) };
         arrows.RowDefinitions.Add(new()); arrows.RowDefinitions.Add(new()); arrows.Children.Add(_up); Grid.SetRow(_down, 1); arrows.Children.Add(_down);
         var editor = new Grid(); editor.Children.Add(_box); editor.Children.Add(arrows); Child = editor;
         _box.TextChanged += (_, _) => RefreshArrows();

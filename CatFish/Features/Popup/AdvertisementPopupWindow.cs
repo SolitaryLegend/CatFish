@@ -2,7 +2,6 @@ using System.IO;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
-using System.Windows.Media.Imaging;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows;
@@ -13,10 +12,11 @@ namespace CatFish.Features.Popup;
 
 public sealed class AdvertisementPopupWindow : Window
 {
+    private const string EmptyPopupPrompt = "拖动应用窗口到广告上松开，或点击「选择」";
     private static readonly HashSet<AdvertisementPopupWindow> OpenPopups = new();
     private readonly AppSettings _settings;
     private readonly ExternalWindowHost _host = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(12, 32, 12, 38) };
-    private readonly TextBlock _status = new() { Text = "拖动应用窗口到广告上松开，或点击「选择」", Foreground = Brushes.White, FontSize = 11, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _status = new() { Text = EmptyPopupPrompt, Foreground = Brushes.White, FontSize = 11, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _caption = new() { Text = "广告", Foreground = Brushes.White, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
     private readonly Border _hint;
     private readonly DockPanel _toolbar = new() { Background = new SolidColorBrush(Color.FromRgb(78, 22, 24)), LastChildFill = true };
@@ -37,6 +37,7 @@ public sealed class AdvertisementPopupWindow : Window
     private WindowTarget? _closeTarget;
     private DispatcherOperation? _overlayRefresh;
     private bool? _closeApplicationOverride;
+    private bool _selecting;
     private bool _restoreFailed;
     private bool _closed;
     private int _remaining;
@@ -100,8 +101,13 @@ public sealed class AdvertisementPopupWindow : Window
         {
             UpdateHoverControls();
             if (_target is null) return;
-            if (!_host.Session.IsAlive) { ClearApp(); SetStatus("目标窗口已关闭，可重新选择应用。"); return; }
+            if (!_host.Session.IsVisibleInHost)
+            {
+                ClearApp("目标窗口已关闭或离开广告，可重新选择应用。");
+                return;
+            }
             _host.Session.Resize(_host.Handle);
+            UpdatePlayerSurfaceLayer();
             if (_audio.IsMuted && DateTime.UtcNow >= _nextAudioRefresh)
             {
                 _nextAudioRefresh = DateTime.UtcNow.AddSeconds(1);
@@ -114,9 +120,11 @@ public sealed class AdvertisementPopupWindow : Window
         Closing += (_, args) =>
         {
             _restoreFailed = false;
-            _closeTarget = (_closeApplicationOverride ?? _settings.PopupCloseSelectedApplication) ? _target ?? _miniSource : null;
+            _closeTarget = (_closeApplicationOverride ?? _settings.PopupCloseSelectedApplication)
+                ? (_host.Session.IsAttached ? _target : _miniSource) : null;
             if (!_host.Session.Detach(out var error, restoreForClose: _closeTarget is not null))
-            { _restoreFailed = true; _closeTarget = null; args.Cancel = true; SetStatus(error); _hint.Visibility = Visibility.Visible; }
+            { _closeTarget = null; args.Cancel = true; ShowWindowError(error); }
+            else if (error.Length != 0) _closeTarget = null;
         };
         Closed += (_, _) =>
         {
@@ -179,30 +187,76 @@ public sealed class AdvertisementPopupWindow : Window
 
     private void SelectWindow()
     {
-        var picker = new WindowPickerWindow(this, false, _target is null ? [] : [_target.Handle], "选择嵌入窗口", false);
-        if (picker.ShowDialog() == true && picker.SelectedTargets.FirstOrDefault() is { } selected) TryEmbed(selected);
+        if (_selecting) return;
+        _selecting = true;
+        _hideTimer.Stop();
+        _overlay?.Hide();
+        UpdatePlayerSurfaceLayer();
+        WindowTarget? selected;
+        try
+        {
+            var picker = new WindowPickerWindow(this, false, _target is null ? [] : [_target.Handle], "选择嵌入窗口",
+                false, PopupWindowTargets.GetPickerTargets)
+            {
+                Topmost = Topmost
+            };
+            selected = picker.ShowDialog() == true ? picker.SelectedTargets.FirstOrDefault() : null;
+        }
+        finally
+        {
+            _selecting = false;
+            if (!_closed)
+            {
+                UpdateOverlay();
+                ResetAutoHide();
+            }
+        }
+        if (_closed || selected is null) return;
+
+        // QQLive can replace its visible window while the picker is open.
+        var target = TencentVideoWindows.IsApplication(selected)
+            ? PopupWindowTargets.GetPickerTargets().FirstOrDefault(TencentVideoWindows.IsApplication)
+            : selected;
+        if (target is not null) TryEmbed(target);
+        else SetStatus("腾讯视频窗口已隐藏或关闭，请打开窗口后重新选择。");
     }
 
     public bool TryEmbed(WindowTarget target)
     {
         if (target.ProcessId == Environment.ProcessId) { SetStatus("请选择其他应用窗口。"); return false; }
-        _host.Visibility = Visibility.Visible; UpdateLayout();
+        target = PopupWindowTargets.ForEmbedding(target);
+        if (_host.Session.Handle == target.Handle && _host.Session.IsVisibleInHost) return true;
+
+        _host.Visibility = Visibility.Visible;
+        UpdateLayout();
         if (!_host.Session.Attach(target, _host.Handle, out var error))
         {
-            if (!_host.Session.IsAlive) { _audio.Restore(); UpdateMuteButton(); _target = null; _host.Visibility = Visibility.Collapsed; _overlay?.Hide(); }
-            SetStatus(error); return false;
+            if (!_host.Session.IsVisibleInHost || _host.Session.Handle != _target?.Handle) ResetEmbeddedView();
+            ShowWindowError(error);
+            return false;
         }
-        _restoreFailed = false; _audio.Restore(); UpdateMuteButton(); _target = target;
-        _hideTimer.Stop(); _overlay ??= new VideoEdgeOverlay(this); UpdateOverlay();
-        SetStatus("已嵌入，可直接操作；「还原」将应用移回屏幕中央。"); return true;
+
+        _restoreFailed = false;
+        _audio.Restore();
+        UpdateMuteButton();
+        _target = target;
+        _hideTimer.Stop();
+        _overlay ??= new VideoEdgeOverlay(this);
+        UpdateOverlay();
+        SetStatus("已嵌入，可直接操作；「还原」将应用移回屏幕中央。");
+        return true;
     }
 
     private void RestoreApp()
     {
         var target = _target;
         if (!_host.Session.Detach(out var error, restoreForClose: true))
-        { _restoreFailed = true; SetStatus(error); _hint.Visibility = Visibility.Visible; return; }
-        ClearApp();
+        { ShowWindowError(error); return; }
+        _miniSource = null;
+        ResetEmbeddedView();
+        if (error.Length != 0) { ShowWindowError(error); return; }
+        SetStatus(EmptyPopupPrompt);
+        ResetAutoHide();
         if (target is null || !NativeMethods.IsWindow(target.Handle)
             || NativeMethods.GetWindowThreadProcessId(target.Handle, out var processId) == 0 || processId != target.ProcessId) return;
         NativeMethods.ShowWindow(target.Handle, NativeMethods.SwRestore);
@@ -212,21 +266,33 @@ public sealed class AdvertisementPopupWindow : Window
         var height = Math.Min(workArea.Height, Math.Max(1, bounds.Bottom - bounds.Top));
         if (!NativeMethods.SetWindowPos(target.Handle, nint.Zero, workArea.Left + (workArea.Width - width) / 2,
             workArea.Top + (workArea.Height - height) / 2, width, height,
-            NativeMethods.SwpNoActivate | NativeMethods.SwpNoCopyBits | NativeMethods.SwpFrameChanged | 0x4))
-        { _restoreFailed = true; SetStatus("应用已移出，但无法居中，请手动移动窗口。"); _hint.Visibility = Visibility.Visible; return; }
+            NativeMethods.SwpNoActivate | NativeMethods.SwpNoCopyBits | NativeMethods.SwpFrameChanged | NativeMethods.SwpNoZOrder))
+        { ShowWindowError("应用已移出，但无法居中，请手动移动窗口。"); return; }
         NativeMethods.RedrawWindow(target.Handle, nint.Zero, nint.Zero,
             NativeMethods.RdwInvalidate | NativeMethods.RdwErase | NativeMethods.RdwAllChildren | NativeMethods.RdwFrame);
         NativeMethods.SetForegroundWindow(target.Handle);
     }
 
-    public void ClearApp()
+    public void ClearApp() => ClearApp(EmptyPopupPrompt);
+
+    private void ClearApp(string status)
     {
         _miniSource = null;
-        if (!_host.Session.Detach(out var error)) { _restoreFailed = true; SetStatus(error); _hint.Visibility = Visibility.Visible; return; }
+        if (!_host.Session.Detach(out var error))
+        {
+            if (!_host.Session.IsVisibleInHost) ResetEmbeddedView();
+            ShowWindowError(error); return;
+        }
+        ResetEmbeddedView();
+        if (error.Length != 0) { ShowWindowError(error); return; }
+        SetStatus(status); ResetAutoHide();
+    }
+
+    private void ResetEmbeddedView()
+    {
         _restoreFailed = false;
         _audio.Restore(); UpdateMuteButton();
         _target = null; _overlay?.Hide(); _host.Visibility = Visibility.Collapsed; _caption.Text = "广告";
-        SetStatus("拖动应用窗口到广告上松开，或点击「选择」"); ResetAutoHide();
     }
 
     internal void ToggleMute()
@@ -251,9 +317,9 @@ public sealed class AdvertisementPopupWindow : Window
 
     internal void AcceptWindowDrop(nint handle, NativeMethods.NativePoint point)
     {
-        if (_closed || !IsVisible || !NativeMethods.GetWindowRect(new WindowInteropHelper(this).Handle, out var bounds)
+        if (_closed || _selecting || !IsVisible || !NativeMethods.GetWindowRect(new WindowInteropHelper(this).Handle, out var bounds)
             || point.X < bounds.Left || point.X >= bounds.Right || point.Y < bounds.Top || point.Y >= bounds.Bottom) return;
-        var target = new WindowDiscoveryService().GetEligibleWindows(includeFloating: true).FirstOrDefault(window => window.Handle == handle);
+        var target = PopupWindowTargets.ResolveDropTarget(handle, PopupWindowTargets.Discover());
         if (target is not null) TryEmbed(target);
     }
 
@@ -265,7 +331,9 @@ public sealed class AdvertisementPopupWindow : Window
         if (path is null) return;
         if (!Path.GetExtension(path).Equals(".exe", StringComparison.OrdinalIgnoreCase))
         { SetStatus("请拖动已打开的窗口到广告上；快捷方式请用「选择」匹配运行中的窗口。"); return; }
-        var matches = new WindowDiscoveryService().GetEligibleWindows(includeFloating: true).Where(window => window.ProcessName.Equals(Path.GetFileNameWithoutExtension(path), StringComparison.OrdinalIgnoreCase)).ToList();
+        var processName = Path.GetFileNameWithoutExtension(path);
+        var matches = PopupWindowTargets.GetPickerTargets()
+            .Where(window => window.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase)).ToList();
         if (matches.Count == 1) TryEmbed(matches[0]); else SelectWindow();
     }
 
@@ -275,7 +343,8 @@ public sealed class AdvertisementPopupWindow : Window
         if (_target is not { } target) { SelectWindow(); return; }
         if (PlatformMiniPlayer.IsMiniPlayer(target)) { SetStatus("当前选中的已经是平台小窗。"); return; }
         if (!_host.Session.Detach(out var error, restoreForClose: true))
-        { _restoreFailed = true; SetStatus(error); _hint.Visibility = Visibility.Visible; return; }
+        { ShowWindowError(error); return; }
+        if (error.Length != 0) { ResetEmbeddedView(); ShowWindowError(error); return; }
         ClearApp(); _miniSource = target; _hideTimer.Stop();
         SetStatus("已还原应用，正在查找平台的小窗 / 画中画入口…");
         _hint.Visibility = Visibility.Visible;
@@ -295,7 +364,7 @@ public sealed class AdvertisementPopupWindow : Window
             {
                 await Task.Delay(250);
                 if (_closed || _miniSource != target || _target is not null) return;
-                var mini = new WindowDiscoveryService().GetEligibleWindows(includeFloating: true)
+                var mini = PopupWindowTargets.Discover()
                     .FirstOrDefault(window => window.ProcessId == target.ProcessId && PlatformMiniPlayer.IsMiniPlayer(window));
                 if (mini is not null)
                 {
@@ -314,9 +383,24 @@ public sealed class AdvertisementPopupWindow : Window
     }
 
     private void SetStatus(string message) { _status.Text = message; _hint.ToolTip = message; }
+
+    private void ShowWindowError(string message)
+    {
+        _restoreFailed = true;
+        _hideTimer.Stop();
+        SetStatus(message);
+        _hint.Visibility = Visibility.Visible;
+    }
     private void UpdateOverlay()
     {
-        if (_overlay is not null && IsLoaded && _target is not null) _overlay.UpdateBounds(_host, _background, _settings);
+        if (!_selecting && _overlay is not null && IsLoaded && _target is not null) _overlay.UpdateBounds(_host, _background, _settings);
+        UpdatePlayerSurfaceLayer();
+    }
+
+    private void UpdatePlayerSurfaceLayer()
+    {
+        if (_target is not null)
+            _host.Session.UpdatePlayerSurfaceLayer(new WindowInteropHelper(this).Handle, showAbove: !_selecting);
     }
     private void ScheduleOverlayRefresh()
     {
@@ -332,7 +416,7 @@ public sealed class AdvertisementPopupWindow : Window
     private void ResetAutoHide()
     {
         _hideTimer.Stop(); _remaining = Math.Clamp(_settings.PopupAutoHideSeconds, 0, 600);
-        if (_remaining > 0 && _target is null && _miniSource is null && !_restoreFailed && !IsMouseOver) _hideTimer.Start();
+        if (_remaining > 0 && !_selecting && _target is null && _miniSource is null && !_restoreFailed && !IsMouseOver) _hideTimer.Start();
     }
     private void PositionOnMonitor()
     {

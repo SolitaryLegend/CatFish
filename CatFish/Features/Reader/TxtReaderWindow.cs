@@ -6,6 +6,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows;
 using System.Windows.Threading;
 using CatFish.Core;
@@ -25,7 +26,7 @@ public sealed class TxtReaderWindow : Window
     private readonly Border _toolbarPanel;
     private readonly DispatcherTimer _hideToolbar;
     private readonly Button _playButton, _modeButton, _lockButton, _pinButton;
-    private readonly ReaderNumberStepper _speedStepper, _fontStepper;
+    private readonly ReaderNumberStepper _speedStepper, _fontStepper, _textOpacityStepper, _backgroundOpacityStepper;
     private readonly TextBlock _speedUnit;
     internal HoverPopup HoverToolbar => _toolbar;
     public bool ShowOutline { get; set; }
@@ -57,18 +58,27 @@ public sealed class TxtReaderWindow : Window
                 if (_closed) return;
                 if (reader.Settings.Mode == "Static") reader.Settings.SecondsPerPage = value; else reader.Settings.PixelsPerSecond = value;
                 reader.RefreshLayout(false);
-            }) { Width = 50 };
+            }, compact: true) { Width = 48 };
         _fontStepper = new ReaderNumberStepper("ReaderToolbarFontSize", "字号", () => reader.Settings.FontSize, () => 10, () => 72,
-            value => { if (_closed) return; reader.Settings.FontSize = value; reader.RefreshLayout(); }) { Width = 46 };
-        _speedUnit = new TextBlock { Margin = new Thickness(5, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        var adjustments = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(4, 5, 4, 0) };
-        adjustments.Children.Add(new TextBlock { Text = "速度", Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-        adjustments.Children.Add(_speedStepper); adjustments.Children.Add(_speedUnit);
-        adjustments.Children.Add(new Border { Width = 1, Height = 16, Background = new SolidColorBrush(Color.FromRgb(218, 229, 224)), Margin = new Thickness(12, 0, 12, 0) });
-        adjustments.Children.Add(new TextBlock { Text = "字号", Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
-        adjustments.Children.Add(_fontStepper);
+            value => { if (_closed) return; reader.Settings.FontSize = value; reader.RefreshLayout(); }, compact: true) { Width = 44 };
+        const string textOpacity = "文字不透明度", backgroundOpacity = "背景不透明度";
+        _textOpacityStepper = OpacityStepper("ReaderToolbarTextOpacity", textOpacity,
+            () => reader.Settings.TextOpacity, value => reader.Settings.TextOpacity = value);
+        _backgroundOpacityStepper = OpacityStepper("ReaderToolbarBackgroundOpacity", backgroundOpacity,
+            () => reader.Settings.BackgroundOpacity, value => reader.Settings.BackgroundOpacity = value);
+        var toolbarBackground = new SolidColorBrush(Color.FromRgb(245, 248, 247));
+        // The checkerboard image has 48 transparent pixels on each side.
+        var opacityIcon = new CroppedBitmap(LoadToolbarIcon("Opacity"), new Int32Rect(48, 48, 160, 160));
+        _speedUnit = new TextBlock { Margin = new Thickness(4, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var adjustments = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 5, 0, 0) };
+        adjustments.Children.Add(AdjustmentField(new Image { Source = LoadToolbarIcon("Speed") }, "速度", _speedStepper, _speedUnit));
+        // Match the visible height of the speed artwork, which has more transparent padding.
+        adjustments.Children.Add(AdjustmentField(new Image { Source = LoadToolbarIcon("FontSize") }, "字号", _fontStepper, iconSize: 13));
+        adjustments.Children.Add(AdjustmentField(OpacityIcon(opacityIcon, "A", toolbarBackground), textOpacity, _textOpacityStepper, iconSize: 13));
+        adjustments.Children.Add(AdjustmentField(OpacityIcon(opacityIcon, "B", toolbarBackground), backgroundOpacity, _backgroundOpacityStepper, iconSize: 13));
+
         var toolbarContent = new StackPanel(); toolbarContent.Children.Add(actions); toolbarContent.Children.Add(adjustments);
-        _toolbarPanel = new Border { Background = new SolidColorBrush(Color.FromRgb(245, 248, 247)), BorderBrush = new SolidColorBrush(Color.FromRgb(196, 212, 204)),
+        _toolbarPanel = new Border { Background = toolbarBackground, BorderBrush = new SolidColorBrush(Color.FromRgb(196, 212, 204)),
             BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(5), Padding = new Thickness(4), Child = toolbarContent };
         TextElement.SetFontFamily(_toolbarPanel, new FontFamily("Microsoft YaHei UI")); TextElement.SetFontSize(_toolbarPanel, 11);
         TextElement.SetForeground(_toolbarPanel, new SolidColorBrush(Color.FromRgb(41, 60, 53)));
@@ -164,10 +174,60 @@ public sealed class TxtReaderWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(button, hint);
         button.Click += (_, _) => action(); return button;
     }
+
+    private ReaderNumberStepper OpacityStepper(string name, string caption, Func<double> read, Action<double> change)
+    {
+        return new ReaderNumberStepper(name, caption, () => read() * 100, () => 0, () => 100, value =>
+        {
+            if (_closed) return;
+            change(value / 100);
+            _reader.RefreshLayout(repaginate: false);
+        }, compact: true) { Width = 48 };
+    }
+
+    private static BitmapImage LoadToolbarIcon(string name) =>
+        new(new Uri($"pack://application:,,,/CatFish;component/Assets/ReaderToolbar/{name}.png", UriKind.Absolute));
+
+    private static Grid OpacityIcon(ImageSource source, string letter, Brush background)
+    {
+        var icon = new Grid();
+        icon.Children.Add(new Image { Source = source });
+        icon.Children.Add(new Border
+        {
+            Width = 8,
+            Height = 8,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = background,
+            Child = new TextBlock
+            {
+                Text = letter, TextAlignment = TextAlignment.Center, FontSize = 8, FontWeight = FontWeights.Bold,
+                LineHeight = 8, LineStackingStrategy = LineStackingStrategy.BlockLineHeight
+            }
+        });
+        return icon;
+    }
+
+    private static StackPanel AdjustmentField(FrameworkElement icon, string caption, ReaderNumberStepper stepper, TextBlock? unit = null, double iconSize = 16)
+    {
+        var field = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(3, 0, 3, 0) };
+        icon.Width = icon.Height = iconSize;
+        icon.Margin = new Thickness(0, 0, 4, 0);
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        icon.ToolTip = caption;
+        System.Windows.Automation.AutomationProperties.SetName(icon, caption);
+        RenderOptions.SetBitmapScalingMode(icon, BitmapScalingMode.HighQuality);
+        field.Children.Add(icon);
+        field.Children.Add(stepper);
+        if (unit is not null) field.Children.Add(unit);
+        return field;
+    }
+
     private void CommitToolbarEdits()
     {
         if (_closed) return;
         _speedStepper.Commit(); _fontStepper.Commit();
+        _textOpacityStepper.Commit(); _backgroundOpacityStepper.Commit();
     }
     private static TextBox? ToolbarEditor(DependencyObject? source)
     {
@@ -201,6 +261,7 @@ public sealed class TxtReaderWindow : Window
         _speedUnit.Text = _reader.Settings.Mode == "Static" ? "秒/屏" : "px/s";
         _speedStepper.ToolTip = _reader.Settings.Mode == "Static" ? "每屏秒数：数值越小，阅读越快" : "滑动速度：数值越大，阅读越快";
         _speedStepper.Refresh(); _fontStepper.Refresh();
+        _textOpacityStepper.Refresh(); _backgroundOpacityStepper.Refresh();
         _surface.Cursor = _reader.Settings.Locked ? Cursors.Arrow : Cursors.SizeAll;
     }
 

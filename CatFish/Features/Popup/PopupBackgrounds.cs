@@ -6,21 +6,24 @@ using Imaging = System.Drawing.Imaging;
 
 namespace CatFish.Features.Popup;
 
-public sealed record PopupBackground(string Id, string Name, string Asset);
+public sealed record PopupBackground(string Id, string Asset)
+{
+    public string Name => Asset;
+}
 
 internal sealed record PopupAnimation(IReadOnlyList<BitmapSource> Frames, IReadOnlyList<TimeSpan> Delays);
 
 public static class PopupBackgrounds
 {
-    public const string DefaultId = "jd1111";
+    public const string DefaultId = "jd1111"; // Keep the default slot compatible with saved settings.
     private static readonly Dictionary<string, PopupAnimation> Cache = new();
     public static IReadOnlyList<PopupBackground> Items { get; } = Array.AsReadOnly<PopupBackground>([
-        new(DefaultId, "京东双11", "jd1111.jpg"),
-        new("gfcb", "鬼服超变", "gfcb.gif"),
-        new("workbuddy", "WorkBuddy", "workbuddy.png"),
-        new("wxzjz", "无限转九职", "wxzjz.gif"),
-        new("xlxxj", "修罗吸血剑", "xlxxj_320x402.png"),
-        new("nano-work", "纳米Work", "纳米Work.png")
+        new(DefaultId, "找好服网.gif"),
+        new("gfcb", "鬼服超变.gif"),
+        new("workbuddy", "Workbuddy.png"),
+        new("wxzjz", "无限转九职.gif"),
+        new("xlxxj", "修罗吸血剑.png"),
+        new("nano-work", "纳米Work.png")
     ]);
 
     public static BitmapSource Load(string id) => LoadAnimation(id).Frames[0];

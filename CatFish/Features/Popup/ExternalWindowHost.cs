@@ -10,7 +10,7 @@ public sealed class ExternalWindowHost : HwndHost
     public EmbeddedWindowSession Session { get; } = new();
     protected override HandleRef BuildWindowCore(HandleRef parent)
     {
-        var handle = NativeMethods.CreateWindowEx(0, "static", "CatFish video host",
+        var handle = NativeMethods.CreateWindowEx(0, "static", string.Empty,
             (uint)(NativeMethods.WsChild | NativeMethods.WsVisible | NativeMethods.WsClipChildren | NativeMethods.WsClipSiblings),
             0, 0, 1, 1, parent.Handle, nint.Zero, nint.Zero, nint.Zero);
         if (handle == nint.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastPInvokeError());

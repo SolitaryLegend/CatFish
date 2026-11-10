@@ -216,6 +216,9 @@ internal static class TxtReaderRegression
             for (var i = 0; i < tabs.Items.Count; i++)
             {
                 tabs.SelectedIndex = i; render(settingsWindow, $"txt-reader-settings-tab{i}.png");
+                var page = (ScrollViewer)((TabItem)tabs.Items[i]).Content;
+                check(page.VerticalScrollBarVisibility == ScrollBarVisibility.Hidden && page.ScrollableHeight < .5,
+                    $"reader tab {i + 1} fits completely without a page scrollbar");
                 var groups = Descendants<GroupBox>((DependencyObject)settingsWindow.Content).ToArray();
                 check(groups.Length >= 3 && groups.All(group => group.Template is not null && group.BorderThickness.Left == 1 && group.Header is string),
                     $"reader tab {i + 1} groups its content in thin frames with corner captions");
@@ -442,6 +445,8 @@ internal static class TxtReaderRegression
         var settings = reader.Settings;
         var originalMode = settings.Mode; var originalSeconds = settings.SecondsPerPage; var originalSpeed = settings.PixelsPerSecond;
         var originalFont = settings.FontSize; var originalHeight = settings.Height; var originalOffset = reader.Offset;
+        var originalTextOpacity = settings.TextOpacity; var originalBackgroundOpacity = settings.BackgroundOpacity;
+        var originalWheelPaging = settings.MouseWheelPaging;
         NativeMethods.GetCursorPos(out var cursor);
         var buttons = Descendants<RepeatButton>(window.HoverToolbar.Child).ToArray();
         var speedUp = buttons.Single(button => button.Name == "ReaderToolbarSpeedIncrease");
@@ -506,6 +511,19 @@ internal static class TxtReaderRegression
                 $"real mouse click on the hover font arrow changes the visible font without dragging or closing the menu (font={settings.FontSize}, expected={originalFont + 1}, offset={reader.Offset}, open={window.HoverToolbar.IsOpen})");
             fontDown.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(settings.FontSize == originalFont, "hover font down arrow decreases the font immediately");
+
+            var textOpacityBox = Descendants<TextBox>(window.HoverToolbar.Child).Single(box => box.Name == "ReaderToolbarTextOpacityInput");
+            var backgroundUp = buttons.Single(button => button.Name == "ReaderToolbarBackgroundOpacityIncrease");
+            settings.MouseWheelPaging = true;
+            NativeWheel(textOpacityBox, -120);
+            check(Math.Abs(settings.TextOpacity - .99) < .001 && settings.BackgroundOpacity == originalBackgroundOpacity && reader.Offset == originalOffset,
+                "mouse wheel changes only text opacity without turning the page");
+            var backgroundPoint = backgroundUp.PointToScreen(new Point(backgroundUp.ActualWidth / 2, backgroundUp.ActualHeight / 2));
+            NativeDrag((int)backgroundPoint.X, (int)backgroundPoint.Y, 0, 0); Pump(40);
+            check(Math.Abs(settings.BackgroundOpacity - .01) < .001 && Math.Abs(settings.TextOpacity - .99) < .001
+                && reader.Offset == originalOffset && window.HoverToolbar.IsOpen,
+                "mouse click on the background opacity arrow changes only the background and keeps the toolbar open");
+
             settings.SecondsPerPage = 6; reader.RefreshLayout(false);
             RenderElement((FrameworkElement)window.HoverToolbar.Child, "single-line-hover-toolbar-static.png");
             settings.PixelsPerSecond = 40; mode.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -515,6 +533,7 @@ internal static class TxtReaderRegression
         {
             Keyboard.Focus((IInputElement)window.Content);
             reader.Pause(); settings.Mode = originalMode; settings.SecondsPerPage = originalSeconds; settings.PixelsPerSecond = originalSpeed;
+            settings.TextOpacity = originalTextOpacity; settings.BackgroundOpacity = originalBackgroundOpacity; settings.MouseWheelPaging = originalWheelPaging;
             settings.FontSize = originalFont; settings.Height = originalHeight; reader.Seek(originalOffset); reader.RefreshLayout();
             SetCursorPos(cursor.X, cursor.Y); Pump(40);
         }

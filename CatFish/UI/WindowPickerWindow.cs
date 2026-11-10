@@ -10,6 +10,7 @@ public sealed class WindowPickerWindow : Window
 {
     private readonly bool _multiple;
     private readonly bool _includeCatFish;
+    private readonly Func<IReadOnlyList<WindowTarget>>? _getTargets;
     private readonly List<Choice> _choices = new();
     private readonly ListBox _list = new();
     private readonly TextBox _search = new() { ToolTip = "搜索窗口标题" };
@@ -17,9 +18,11 @@ public sealed class WindowPickerWindow : Window
     private readonly TextBlock _count = new() { Foreground = ViewFactory.MutedBrush, VerticalAlignment = VerticalAlignment.Center };
     public IReadOnlyList<WindowTarget> SelectedTargets => _choices.Where(c => c.Selected).Select(c => c.Target).ToList();
 
-    public WindowPickerWindow(Window? owner, bool multiple, IEnumerable<nint> selected, string? pickerTitle = null, bool includeCatFish = true)
+    public WindowPickerWindow(Window? owner, bool multiple, IEnumerable<nint> selected, string? pickerTitle = null,
+        bool includeCatFish = true, Func<IReadOnlyList<WindowTarget>>? getTargets = null)
     {
-        Owner = owner; _multiple = multiple; _includeCatFish = includeCatFish; Title = pickerTitle ?? (multiple ? "选择切换应用" : "选择滚动应用");
+        Owner = owner; _multiple = multiple; _includeCatFish = includeCatFish; _getTargets = getTargets;
+        Title = pickerTitle ?? (multiple ? "选择切换应用" : "选择滚动应用");
         Width = 310; Height = 390; MinWidth = 290; MinHeight = 300; WindowStartupLocation = owner is null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner;
         ViewFactory.Shell(this);
         var root = new DockPanel { Margin = new Thickness(12) };
@@ -46,7 +49,8 @@ public sealed class WindowPickerWindow : Window
     {
         selection ??= _choices.Where(c => c.Selected).Select(c => c.Target.Handle).ToHashSet();
         _choices.Clear();
-        foreach (var target in new WindowDiscoveryService().GetEligibleWindows(ViewFactory.MainHandle, !_includeCatFish))
+        var targets = _getTargets?.Invoke() ?? new WindowDiscoveryService().GetEligibleWindows(ViewFactory.MainHandle, !_includeCatFish);
+        foreach (var target in targets)
         {
             if (!_includeCatFish && target.IsCatFish) continue;
             var choice = new Choice(target, selection.Contains(target.Handle)); choice.PropertyChanged += SelectionChanged; _choices.Add(choice);
