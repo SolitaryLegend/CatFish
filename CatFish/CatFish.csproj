@@ -23,4 +23,18 @@
     <Resource Include="Assets\CatFish.ico" />
     <Resource Include="Assets\CatFish.png" />
   </ItemGroup>
+
+  <Target Name="AddRuntimeLauncherToPublish" AfterTargets="ComputeFilesToPublish"
+          Condition="'$(OS)' == 'Windows_NT' and '$(UseAppHost)' == 'true' and '$(SelfContained)' != 'true' and '$(PublishSingleFile)' != 'true' and '$(_NativeExecutableExtension)' == '.exe' and ('$(RuntimeIdentifier)' == '' or '$(RuntimeIdentifier)' == 'win-x64')">
+    <PropertyGroup>
+      <_LauncherFramework>$(SystemRoot)\Microsoft.NET\Framework64\v4.0.30319</_LauncherFramework>
+      <_LauncherOutput>$(IntermediateOutputPath)launcher\CatFish.exe</_LauncherOutput>
+    </PropertyGroup>
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(_LauncherOutput)'))" />
+    <Exec Command="&quot;$(_LauncherFramework)\csc.exe&quot; /nologo /codepage:65001 /target:winexe /optimize+ /win32icon:&quot;$(MSBuildProjectDirectory)\$(ApplicationIcon)&quot; /reference:System.Windows.Forms.dll /out:&quot;$(_LauncherOutput)&quot; &quot;$(MSBuildProjectDirectory)\..\Launcher\Program.cs&quot;" />
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.RelativePath)' == 'CatFish.exe'" />
+      <ResolvedFileToPublish Include="$(_LauncherOutput)" RelativePath="CatFish.exe" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

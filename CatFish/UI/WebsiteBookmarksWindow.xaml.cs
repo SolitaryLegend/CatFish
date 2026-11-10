@@ -17,6 +17,7 @@ public partial class WebsiteBookmarksWindow : Window
     private readonly Action<Uri> _visit;
     private readonly ObservableCollection<WebsiteBookmark> _bookmarks;
     private readonly DispatcherTimer _saveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private (WebsiteBookmark Bookmark, int Index)? _lastDeletion;
     private bool _dirty;
 
     public WebsiteBookmarksWindow() : this(AppController.Settings, AppController.SettingsStore) { }
@@ -86,7 +87,21 @@ public partial class WebsiteBookmarksWindow : Window
     private void Delete_Click(object sender, RoutedEventArgs e)
     {
         if (((FrameworkElement)sender).DataContext is not WebsiteBookmark bookmark || !CommitEdits()) return;
-        _bookmarks.Remove(bookmark);
+        var index = _bookmarks.IndexOf(bookmark);
+        if (index < 0 || bookmark.IsEmpty) return;
+        _bookmarks.RemoveAt(index);
+        _lastDeletion = (bookmark, index);
+        var label = !string.IsNullOrWhiteSpace(bookmark.Name) ? bookmark.Name.Trim() : bookmark.Url.Trim();
+        DeleteNoticeText.Text = (label.Length == 0 ? "该" : $"“{label}”") + "网址已删除，";
+        DeleteNotice.Visibility = Visibility.Visible;
+    }
+
+    private void UndoDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastDeletion is not { } deleted || !CommitEdits()) return;
+        _bookmarks.Insert(Math.Min(deleted.Index, _bookmarks.Count), deleted.Bookmark);
+        _lastDeletion = null;
+        DeleteNotice.Visibility = Visibility.Collapsed;
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)

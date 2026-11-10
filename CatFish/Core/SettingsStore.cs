@@ -8,6 +8,12 @@ public sealed class SettingsStore
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
     private readonly string _path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CatFish", "settings.json");
     private readonly SemaphoreSlim _saveLock = new(1, 1);
+
+    private static AppSettings CreateDefaultSettings() => new()
+    {
+        PopupLayoutVersion = Features.Popup.PopupLayout.Version, HotkeyLayoutVersion = 1, WebsiteBookmarksInitialized = true
+    };
+
     internal static void MigrateLegacySettings(string? localAppData = null)
     {
         localAppData ??= Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -27,11 +33,14 @@ public sealed class SettingsStore
     {
         try
         {
-            if (!File.Exists(_path)) return new() { PopupLayoutVersion = Features.Popup.PopupLayout.Version, HotkeyLayoutVersion = 1 };
-            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path), JsonOptions) ?? new();
+            if (!File.Exists(_path)) return CreateDefaultSettings();
+            var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path), JsonOptions) ?? CreateDefaultSettings();
             settings.TxtReader ??= new(); settings.TxtReader.Normalize();
             settings.Music ??= new(); settings.Music.Normalize();
             settings.WebsiteBookmarks = (settings.WebsiteBookmarks ?? new()).Where(bookmark => bookmark is not null && !bookmark.IsEmpty).ToList();
+            if (!settings.WebsiteBookmarksInitialized && settings.WebsiteBookmarks.Count == 0)
+                settings.WebsiteBookmarks = WebsiteBookmark.CreateDefaults();
+            settings.WebsiteBookmarksInitialized = true;
             NormalizeHotkeys(settings);
             if (settings.PopupLayoutVersion < 1)
             {
@@ -86,7 +95,7 @@ public sealed class SettingsStore
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             try { if (File.Exists(_path)) File.Copy(_path, _path + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".bak", false); } catch { }
-            return new() { PopupLayoutVersion = Features.Popup.PopupLayout.Version, HotkeyLayoutVersion = 1 };
+            return CreateDefaultSettings();
         }
     }
     internal static void NormalizeHotkeys(AppSettings settings)

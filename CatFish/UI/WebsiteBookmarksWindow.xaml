@@ -64,11 +64,35 @@
                 </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
-        <Grid Grid.Row="1" Margin="0,3,0,0" Height="14">
-            <TextBlock Text="双击编辑 · 末行新增 · 自动保存" Foreground="{StaticResource MutedBrush}" FontSize="10">
-                <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Hidden"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=StatusText}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+        <StackPanel Grid.Row="1" Margin="0,3,0,0">
+            <TextBlock x:Name="DeleteNotice" Visibility="Collapsed" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap">
+                <Run x:Name="DeleteNoticeText"/><Hyperlink x:Name="UndoDeleteLink" Foreground="#4E74A4" Click="UndoDelete_Click">撤销</Hyperlink>
             </TextBlock>
-            <TextBlock x:Name="StatusText" Foreground="#A65745" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-        </Grid>
+            <TextBlock Text="双击编辑 · 末行新增 · 自动保存" Foreground="{StaticResource MutedBrush}" FontSize="10">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding Visibility, ElementName=DeleteNotice}" Value="Collapsed"/>
+                                    <Condition Binding="{Binding Text, ElementName=StatusText}" Value=""/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <TextBlock x:Name="StatusText" Foreground="#A65745" FontSize="10" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </StackPanel>
     </Grid>
 </Window>

@@ -28,6 +28,14 @@ public sealed class WebsiteBookmark : INotifyPropertyChanged, IEditableObject
     }
 
     internal WebsiteBookmark Copy() => new() { Name = Name, Url = Url, Description = Description };
+
+    internal static List<WebsiteBookmark> CreateDefaults() =>
+    [
+        new() { Name = "电子书", Url = "https://www.txt80.cc/" },
+        new() { Name = "线上桌游", Url = "https://game.hullqin.cn/" },
+        new() { Name = "小霸王", Url = "https://www.yikm.net/" }
+    ];
+
     public void BeginEdit() => _beforeEdit ??= Copy();
     public void EndEdit() => _beforeEdit = null;
     public void CancelEdit()

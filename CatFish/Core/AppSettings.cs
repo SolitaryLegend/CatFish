@@ -7,7 +7,8 @@ public sealed class AppSettings
 {
     public MusicSettings Music { get; set; } = new();
     public TxtReaderSettings TxtReader { get; set; } = new();
-    public List<WebsiteBookmark> WebsiteBookmarks { get; set; } = new();
+    public List<WebsiteBookmark> WebsiteBookmarks { get; set; } = WebsiteBookmark.CreateDefaults();
+    public bool WebsiteBookmarksInitialized { get; set; }
     public bool MainWindowTopmost { get; set; }
     public int SwitchMinSeconds { get; set; } = 30;
     public int SwitchMaxSeconds { get; set; } = 90;

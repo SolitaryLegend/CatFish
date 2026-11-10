@@ -27,8 +27,17 @@ internal static class MainWindowRegression
         typeof(SettingsStore).GetField("_path", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(store, path);
         try
         {
+            var defaults = new[] { ("电子书", "https://www.txt80.cc/"), ("线上桌游", "https://game.hullqin.cn/"), ("小霸王", "https://www.yikm.net/") };
+            bool HasDefaultBookmarks(AppSettings settings) => settings.WebsiteBookmarks.Select(item => (item.Name, item.Url)).SequenceEqual(defaults);
+            check(HasDefaultBookmarks(store.Load()), "first run offers all three default bookmarks in order");
             File.WriteAllText(path, "{}");
-            check(store.Load().WebsiteBookmarks.Count == 0, "older settings open with an empty bookmark list");
+            check(HasDefaultBookmarks(store.Load()), "older settings without a bookmark field receive the defaults");
+            File.WriteAllText(path, """{"WebsiteBookmarks":[]}""");
+            var cleared = store.Load();
+            check(HasDefaultBookmarks(cleared), "older empty bookmark lists receive the defaults once");
+            cleared.WebsiteBookmarks.Clear();
+            store.SaveAsync(cleared).GetAwaiter().GetResult();
+            check(store.Load().WebsiteBookmarks.Count == 0, "clearing the initialized list does not re-add defaults");
             File.WriteAllText(path, """{"WebsiteBookmarks":[null,{}, {"Name":null,"Url":"www.baidu.com","Description":null}]}""");
             var settings = store.Load();
             check(settings.WebsiteBookmarks.Count == 1 && settings.WebsiteBookmarks[0].Name == "", "bookmark loading discards empty rows and tolerates null fields");
@@ -67,10 +76,14 @@ internal static class MainWindowRegression
             check(grid.Items.OfType<WebsiteBookmark>().Count() == 3 && grid.Items[^1] == CollectionView.NewItemPlaceholder,
                 "typing in the empty row creates a bookmark and another trailing empty row");
             Edit(added, 1, " example.com/path?q=中文 ", true);
-            var frame = new DispatcherFrame();
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(650) };
-            timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
-            timer.Start(); Dispatcher.PushFrame(frame);
+            void WaitForAutosave()
+            {
+                var frame = new DispatcherFrame();
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(650) };
+                timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+                timer.Start(); Dispatcher.PushFrame(frame);
+            }
+            WaitForAutosave();
             check(store.Load().WebsiteBookmarks.Count == 3 && store.Load().WebsiteBookmarks[^1].Url == added.Url,
                 "edits automatically save while the bookmark window remains open");
             Edit(added, 2, "待关闭时保存", false);
@@ -89,12 +102,24 @@ internal static class MainWindowRegression
             first.Url = "file:///C:/Windows/notepad.exe"; visited = null;
             visit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             check(visited is null && window.StatusText.Text.Contains("有效"), "invalid website schemes show an error without launching");
+            first.Url = "www.baidu.com";
             var delete = Descendants<Button>(grid).First(button => button.Content is TextBlock { Text: "删除" });
             delete.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            check(window.DeleteNotice.IsVisible && window.DeleteNoticeText.Text == "“百度”网址已删除，"
+                && window.UndoDeleteLink.Inlines.OfType<Run>().Single().Text == "撤销",
+                "deleting shows the bookmark name and an undo link in the footer");
+            render(window, "website-bookmarks-deleted.png");
+            WaitForAutosave();
+            check(store.Load().WebsiteBookmarks.Count == 2 && store.Load().WebsiteBookmarks[0].Name == "示例网站",
+                "deletion is saved while undo is still available");
+            window.UndoDeleteLink.RaiseEvent(new RoutedEventArgs(Hyperlink.ClickEvent));
+            check(!window.DeleteNotice.IsVisible, "undo dismisses the footer notice");
             window.Close();
-            check(store.Load().WebsiteBookmarks.Count == 2 && store.Load().WebsiteBookmarks[0].Name == "示例网站", "delete action persists removal of the selected bookmark");
+            var restored = store.Load().WebsiteBookmarks;
+            check(restored.Count == 3 && restored[0] is { Name: "百度", Url: "www.baidu.com", Description: "搜索" },
+                "undo restores the original row, including its position, and saves it");
 
-            var empty = new WebsiteBookmarksWindow(new AppSettings(), store);
+            var empty = new WebsiteBookmarksWindow(new AppSettings { WebsiteBookmarks = [] }, store);
             ShowOffscreen(empty);
             render(empty, "website-bookmarks-empty.png");
             check(empty.BookmarksGrid.Items.Count == 1 && empty.BookmarksGrid.Items[0] == CollectionView.NewItemPlaceholder
