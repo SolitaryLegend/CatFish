@@ -22,7 +22,7 @@ public sealed class TransparencyHintWindow : Window
         foreach (var (label, action) in new[]
         {
             ($"降低 {AppController.OpacityStep}%", "DecreaseOpacity"),
-            ($"增加 {AppController.OpacityStep}%", "IncreaseOpacity"), ("恢复 100%", "ResetOpacity")
+            ($"增加 {AppController.OpacityStep}%", "IncreaseOpacity"), ("一键透明/恢复", "ResetOpacity")
         })
         {
             var row = new Grid { Margin = new Thickness(0, 0, 0, 8) };

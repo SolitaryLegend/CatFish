@@ -1,6 +1,7 @@
 using System.Windows;
 using CatFish.UI;
 using CatFish.Features.Music;
+using CatFish.Features.Simulation;
 using System.Globalization;
 using Forms = System.Windows.Forms;
 
@@ -25,7 +26,7 @@ public sealed class TrayService : IDisposable
         _menu.Items.Add("显示主窗口", null, (_, _) => Dispatch(main.RestoreFromTray));
         _menu.Items.Add(new Forms.ToolStripSeparator());
         _menu.Items.Add("窗口透明", null, (_, _) => Dispatch(() => AppController.OpenTool("transparency")));
-        var automation = new Forms.ToolStripMenuItem("切换与滚动") { Name = "automation" };
+        var automation = new Forms.ToolStripMenuItem("切换滚动") { Name = "automation" };
         automation.DropDownItems.Add("程序设置", null, (_, _) => Dispatch(() => AppController.OpenTool("switcher")));
         var switching = new Forms.ToolStripMenuItem("窗口切换") { Name = "switch-tasks" };
         switching.DropDownItems.Add("选择程序", null, (_, _) => Dispatch(() => AppController.SelectAutomationPrograms(true)));
@@ -45,7 +46,7 @@ public sealed class TrayService : IDisposable
         _menu.Items.Add(automation);
         var simulation = new Forms.ToolStripMenuItem("系统模拟");
         simulation.DropDownItems.Add("程序设置", null, (_, _) => Dispatch(() => AppController.OpenTool("simulation")));
-        foreach (var (title, scene) in new[] { ("Windows 10 蓝屏", "Blue"), ("Windows 11 黑屏", "Black"), ("系统更新进度", "Update"), ("程序无响应提示", "Crash") })
+        foreach (var (scene, title, _) in SystemSimulationWindow.Scenes)
             simulation.DropDownItems.Add(title, null, (_, _) => Dispatch(() => AppController.ShowSimulationScene(scene)));
         _menu.Items.Add(simulation);
         _menu.Items.Add("广告弹窗", null, (_, _) => Dispatch(() => AppController.OpenTool("popup")));

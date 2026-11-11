@@ -70,7 +70,10 @@ internal static class TransparencyRegression
             check(target.Opacity == 0 && toast.DisplayText == "透明度 0%" && toast.Opacity == 1,
                 "toast remains readable when its target reaches zero opacity");
             Hotkey("ResetOpacity");
-            check(target.Opacity == 1 && toast.DisplayText == "透明度 100%", "restore hotkey reports 100 percent");
+            check(target.Opacity == 1 && toast.DisplayText == "透明度 100%", "toggle restores a fully transparent WPF window to 100 percent");
+            Hotkey("ResetOpacity");
+            check(target.Opacity == .4 && toast.DisplayText == "透明度 40%", "toggle sets an opaque WPF window to 40 percent");
+            Hotkey("ResetOpacity");
             Hotkey("IncreaseOpacity");
             check(toast.DisplayText == "透明度 100%", "upper opacity boundary still produces feedback");
 
@@ -86,6 +89,16 @@ internal static class TransparencyRegression
                 && NativeMethods.GetLayeredWindowAttributes(native.Handle, out _, out var alpha, out _) && alpha == 230,
                 "same toast moves to a different foreground native window and reports its actual opacity");
             check(NativeMethods.GetForegroundWindow() == native.Handle, "native target retains focus after the toast appears");
+            Hotkey("ResetOpacity");
+            check(NativeMethods.GetLayeredWindowAttributes(native.Handle, out _, out alpha, out _) && alpha == 255,
+                "toggle restores a partially transparent native window to 100 percent");
+            Hotkey("ResetOpacity");
+            check(NativeMethods.GetLayeredWindowAttributes(native.Handle, out _, out alpha, out _) && alpha == 102,
+                "toggle sets an opaque native window to 40 percent");
+            check(NativeMethods.SetLayeredWindowAttributes(native.Handle, 0, 254, NativeMethods.LwaAlpha), "test can set native opacity just below 100 percent");
+            Hotkey("ResetOpacity");
+            check(NativeMethods.GetLayeredWindowAttributes(native.Handle, out _, out alpha, out _) && alpha == 255,
+                "toggle restores native opacity even when the displayed percentage would round to 100");
             platform.TryActivate(handle); Pump(100);
             check(!toast.IsVisible, "switching foreground windows dismisses the old target's toast");
             Hotkey("DecreaseOpacity");

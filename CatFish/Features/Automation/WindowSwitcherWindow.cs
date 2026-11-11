@@ -31,13 +31,13 @@ public sealed class WindowSwitcherWindow : Window
     public WindowSwitcherWindow(WindowAutomationService? automation = null)
     {
         _automation = automation ?? AppController.Automation;
-        Title = "切换与滚动 · CatFish"; Width = 370; Height = 430; MinWidth = 350; MinHeight = 350; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Title = "切换滚动 · CatFish"; Width = 370; Height = 430; MinWidth = 350; MinHeight = 350; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         foreach (var mode in new[] { "随机切换", "顺序切换", "手动模式" }) _mode.Items.Add(mode);
         _mode.SelectedIndex = AppController.Settings.SwitchMode switch { "Ordered" => 1, "Manual" => 2, _ => 0 };
         foreach (var direction in new[] { "向下", "向上", "交替" }) _direction.Items.Add(direction);
         _direction.SelectedIndex = AppController.Settings.ScrollDirection switch { "Up" => 1, "Alternate" => 2, _ => 0 };
         ViewFactory.Shell(this);
-        Content = ViewFactory.Frame(this, new Grid { Margin = new Thickness(12), Children = { ViewFactory.Tabs(("窗口切换", BuildSwitchCard()), ("内容滚动", BuildScrollCard())) } }, "切换与滚动");
+        Content = ViewFactory.Frame(this, new Grid { Margin = new Thickness(12), Children = { ViewFactory.Tabs(("窗口切换", BuildSwitchCard()), ("内容滚动", BuildScrollCard())) } }, "切换滚动");
         _switchRun.Requested += start => { if (start) StartSwitching(); else _automation.StopSwitching(); };
         _scrollRun.Requested += start => { if (start) StartScrolling(); else _automation.StopScrolling(); };
         _scrollPicker.Click += (_, _) => SelectScrollApp();

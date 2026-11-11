@@ -1,5 +1,3 @@
-using System.Diagnostics;
-using System.IO;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -11,6 +9,16 @@ namespace CatFish.Features.Simulation;
 
 public sealed class SystemSimulationWindow : Window
 {
+    internal static IReadOnlyList<(string Id, string Title, string Description)> Scenes { get; } =
+    [
+        ("Blue", "Windows 10 蓝屏", "经典停止错误画面。"),
+        ("Black", "Windows 11 黑屏", "新版停止错误画面。"),
+        ("Update", "系统更新进度", "可缓慢增长到 100%，完成后可关闭或返回。"),
+        ("Boot10", "Windows 10 开机动画", "蓝色透视标志与旋转圆点。"),
+        ("Boot11", "Windows 11 开机动画", "四格 Windows 标志与旋转圆弧。"),
+        ("UuPrivacy", "网易UU远程隐私屏保", "演示被控端的隐私屏保画面。")
+    ];
+
     private readonly CheckBox _fullScreen = new() { Content = "全屏显示场景", IsChecked = AppController.Settings.SimulationFullScreen };
     private readonly CheckBox _randomProgress = new() { Content = "进度随机增长", IsChecked = AppController.Settings.SimulationRandomProgress };
     private readonly CheckBox _animateProgress = new() { Content = "显示缓慢变化的进度", IsChecked = AppController.Settings.SimulationAnimateProgress };
@@ -18,7 +26,7 @@ public sealed class SystemSimulationWindow : Window
 
     public SystemSimulationWindow()
     {
-        Title = "系统模拟 · CatFish"; Width = 330; Height = 410; MinWidth = 310; MinHeight = 370; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Title = "系统模拟 · CatFish"; Width = 330; Height = 500; MinWidth = 310; MinHeight = 370; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var root = ViewFactory.Shell(this);
         root.Children.Add(ViewFactory.Card(BuildOptions())); root.Children.Add(ViewFactory.Card(BuildScenes())); root.Children.Add(_status);
         Content = ViewFactory.Frame(this, new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = root }, "系统模拟");
@@ -35,10 +43,8 @@ public sealed class SystemSimulationWindow : Window
     private UIElement BuildScenes()
     {
         var p = new StackPanel();
-        p.Children.Add(Scenario("Windows 10 蓝屏", "经典停止错误画面。", "Blue"));
-        p.Children.Add(Scenario("Windows 11 黑屏", "新版停止错误画面。", "Black"));
-        p.Children.Add(Scenario("系统更新进度", "可缓慢增长到 100%，完成后可关闭或返回。", "Update"));
-        p.Children.Add(Scenario("程序无响应提示", "只在 CatFish 中展示模拟提示，不冻结程序。", "Crash"));
+        foreach (var (id, title, description) in Scenes)
+            p.Children.Add(Scenario(title, description, id));
         p.Children.Add(ViewFactory.Muted("本地演示 · Esc 退出")); return p;
     }
 
@@ -78,19 +84,29 @@ public sealed class SimulationSceneWindow : Window
     public SimulationSceneWindow(string scene, bool fullScreen, bool animateProgress, bool randomProgress)
     {
         _scene = scene; _random = randomProgress;
-        Title = scene == "Crash" ? RandomApplicationName() : "CatFish";
+        Title = "CatFish";
+        Icon = ViewFactory.AppIcon;
         FontFamily = new FontFamily("Microsoft YaHei UI, Segoe UI"); Foreground = Brushes.White;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = scene == "Blue" ? BlueBrush : Brushes.Black;
-        Width = scene == "Crash" ? 460 : 960; Height = scene == "Crash" ? 260 : 540;
+        Width = 960; Height = 540;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
-        var sceneContent = scene switch { "Blue" => BuildBlueScreen(), "Black" => BuildBlackScreen(), "Update" => BuildUpdateScreen(), _ => BuildCrashDialog() };
-        if (scene != "Crash" && fullScreen) { WindowState = WindowState.Maximized; Content = sceneContent; }
+        var sceneContent = scene switch
+        {
+            "Blue" => BuildBlueScreen(),
+            "Black" => BuildBlackScreen(),
+            "Update" => BuildUpdateScreen(),
+            "Boot10" => SimulationVisuals.Boot(windows11: false),
+            "Boot11" => SimulationVisuals.Boot(windows11: true),
+            "UuPrivacy" => SimulationVisuals.UuPrivacy(),
+            _ => throw new ArgumentOutOfRangeException(nameof(scene), scene, "Unknown simulation scene.")
+        };
+        if (fullScreen) { WindowState = WindowState.Maximized; Content = sceneContent; }
         else Content = ViewFactory.Frame(this, new Border { Background = Background, Child = sceneContent }, Title);
         OpenScenes.Add(this);
         _progressTimer.Tick += (_, _) => AdvanceProgress();
         _spinnerTimer.Tick += (_, _) => _rotation.Angle = (_rotation.Angle + 12) % 360;
-        if (animateProgress && scene != "Crash") _progressTimer.Start();
+        if (animateProgress && scene is "Blue" or "Black" or "Update") _progressTimer.Start();
         if (scene == "Update") _spinnerTimer.Start();
         PreviewKeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Escape) { e.Handled = true; Close(); } };
         Closed += (_, _) => { _progressTimer.Stop(); _spinnerTimer.Stop(); OpenScenes.Remove(this); };
@@ -145,37 +161,6 @@ public sealed class SimulationSceneWindow : Window
         root.Children.Add(center);
         var footer = Text("你的计算机可能会重启几次。", 14, new Thickness(0, 0, 0, 65));
         footer.HorizontalAlignment = HorizontalAlignment.Center; footer.VerticalAlignment = VerticalAlignment.Bottom; root.Children.Add(footer); return root;
-    }
-
-    private UIElement BuildCrashDialog()
-    {
-        Background = Brushes.White; Foreground = new SolidColorBrush(Color.FromRgb(32, 32, 32)); FontSize = 12;
-        var body = new StackPanel { Margin = new Thickness(24, 20, 24, 12) };
-        var title = new TextBlock { Text = Title + " 没有响应", FontSize = 19, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = Title }; title.Foreground = new SolidColorBrush(Color.FromRgb(0, 80, 150)); body.Children.Add(title);
-        var message = Text("如果你继续等待，该程序可能会响应。", 12, new Thickness(0, 12, 0, 12)); body.Children.Add(message);
-        body.Children.Add(new ProgressBar { Style = (Style)Application.Current.Resources["BusyProgressStyle"], IsIndeterminate = true, Height = 4, Foreground = new SolidColorBrush(Color.FromRgb(0, 120, 215)), Background = new SolidColorBrush(Color.FromRgb(229, 238, 245)), BorderThickness = new Thickness(0), Margin = new Thickness(0, 0, 0, 14) });
-        foreach (var label in new[] { "关闭程序", "等待程序响应" })
-        {
-            var button = new Button { Content = "→  " + label, Background = Brushes.White, Foreground = new SolidColorBrush(Color.FromRgb(0, 80, 150)), HorizontalContentAlignment = HorizontalAlignment.Left, Padding = new Thickness(8, 8, 8, 8), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Color.FromRgb(225, 225, 225)), Margin = new Thickness(0, 0, 0, 6) };
-            button.Click += (_, _) => { if (label == "关闭程序") Close(); else message.Text = "正在等待程序响应…"; }; body.Children.Add(button);
-        }
-        return body;
-    }
-
-    private static string RandomApplicationName()
-    {
-        var apps = new WindowDiscoveryService().GetEligibleWindows(ViewFactory.MainHandle)
-            .Where(t => !t.IsCatFish && !t.ProcessName.Equals("CatFish", StringComparison.OrdinalIgnoreCase))
-            .DistinctBy(t => t.ProcessId).ToArray();
-        if (apps.Length == 0) return "记事本";
-        var app = apps[Random.Shared.Next(apps.Length)];
-        try
-        {
-            using var process = Process.GetProcessById(app.ProcessId);
-            if (process.MainModule?.FileName is { } path && FileVersionInfo.GetVersionInfo(path).FileDescription is { Length: > 0 } name) return name;
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException) { }
-        return app.ApplicationName ?? app.ProcessName;
     }
 
     private void AdvanceProgress()

@@ -4,9 +4,11 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CatFish.Core;
+using CatFish.Features.Automation;
 using CatFish.UI;
 
 internal static class MainWindowRegression
@@ -21,6 +23,19 @@ internal static class MainWindowRegression
             && tools.Skip(3).Select(Grid.GetRow).SequenceEqual(new[] { 0, 1, 2 }) && tools.Skip(3).All(button => Grid.GetColumn(button) == 2),
             "launcher preserves the first three tools on the left and the last three on the right");
         check(main.WebsiteBookmarksLink.Inlines.OfType<Run>().Single().Text == "网址收藏", "launcher exposes the website bookmarks link");
+        check(Descendants<TextBlock>(tools[1]).Any(text => text.Text == "切换滚动"), "launcher displays the renamed automation tool");
+
+        var switcher = new WindowSwitcherWindow();
+        try
+        {
+            ShowOffscreen(switcher);
+            const uint wmGetIcon = 0x007f;
+            var handle = new WindowInteropHelper(switcher).Handle;
+            check(switcher.Title == "切换滚动 · CatFish" && switcher.ShowInTaskbar && ReferenceEquals(switcher.Icon, ViewFactory.AppIcon)
+                && NativeMethods.SendMessageTimeout(handle, wmGetIcon, new nint(1), nint.Zero, 2, 200, out var icon) != nint.Zero && icon != nint.Zero,
+                "standalone automation window supplies the CatFish icon to Windows");
+        }
+        finally { switcher.Close(); }
 
         var path = Path.Combine(AppContext.BaseDirectory, "bookmark-settings.json");
         var store = new SettingsStore();
@@ -48,12 +63,6 @@ internal static class MainWindowRegression
             };
             Uri? visited = null;
             var window = new WebsiteBookmarksWindow(settings, store, uri => visited = uri);
-            void ShowOffscreen(WebsiteBookmarksWindow preview)
-            {
-                preview.ShowActivated = false; preview.WindowStartupLocation = WindowStartupLocation.Manual;
-                preview.Left = -5000; preview.Top = -5000; preview.Show(); preview.UpdateLayout();
-                preview.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
-            }
             ShowOffscreen(window);
             render(window, "website-bookmarks.png");
             var grid = window.BookmarksGrid;
@@ -151,6 +160,13 @@ internal static class MainWindowRegression
             opened.Close();
         }
         finally { File.Delete(path); }
+    }
+
+    private static void ShowOffscreen(Window preview)
+    {
+        preview.ShowActivated = false; preview.WindowStartupLocation = WindowStartupLocation.Manual;
+        preview.Left = -5000; preview.Top = -5000; preview.Show(); preview.UpdateLayout();
+        preview.Dispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
     }
 
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject

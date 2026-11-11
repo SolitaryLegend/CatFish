@@ -145,7 +145,7 @@ public sealed class HotkeyService : IDisposable
 
     private static string Describe(string action) => action switch
     {
-        "DecreaseOpacity" => "降低透明度", "IncreaseOpacity" => "增加透明度", "ResetOpacity" => "恢复100%",
+        "DecreaseOpacity" => "降低透明度", "IncreaseOpacity" => "增加透明度", "ResetOpacity" => "一键透明/恢复",
         "TogglePopup" => "显示/隐藏广告弹窗",
         "ToggleTxtReader" => "显示/隐藏单行阅读", "TxtPrevious" => "单行阅读上一页", "TxtNext" => "单行阅读下一页", "TxtPlayback" => "单行阅读播放/暂停",
         "MusicPlayback" => "音乐播放/暂停", "MusicPrevious" => "音乐上一首", "MusicNext" => "音乐下一首", _ => "紧急停止与恢复"

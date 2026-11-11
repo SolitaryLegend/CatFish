@@ -1,6 +1,7 @@
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows;
 using CatFish.Core;
 
@@ -8,6 +9,8 @@ namespace CatFish.UI;
 
 internal static class ViewFactory
 {
+    internal static ImageSource AppIcon { get; } = BitmapFrame.Create(new Uri("pack://application:,,,/CatFish;component/Assets/CatFish.ico"));
+
     public static StackPanel Shell(Window window)
     {
         window.Background = (Brush)Application.Current.Resources["CanvasBrush"];
@@ -20,6 +23,7 @@ internal static class ViewFactory
 
     public static Border Frame(Window window, UIElement content, string title, bool compact = false)
     {
+        window.Icon ??= AppIcon;
         EnableEscapeClose(window);
         window.WindowStyle = WindowStyle.None;
         window.ResizeMode = ResizeMode.NoResize;

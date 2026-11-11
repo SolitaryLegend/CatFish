@@ -20,6 +20,7 @@
     <Using Remove="System.Drawing" />
     <Resource Include="Assets\PopupBackgrounds\*" />
     <Resource Include="Assets\ReaderToolbar\*.png" />
+    <Resource Include="Assets\Simulation\UuRemote.png" />
     <Resource Include="Assets\CatFish.ico" />
     <Resource Include="Assets\CatFish.png" />
   </ItemGroup>

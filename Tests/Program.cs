@@ -56,6 +56,11 @@ internal static class Program
             MainWindowRegression.Run(Check, Render);
             Console.WriteLine($"TOTAL: {_passed} main window checks passed."); return;
         }
+        if (args is ["--simulation"])
+        {
+            SimulationRegression.Run(Check, Render);
+            Console.WriteLine($"TOTAL: {_passed} simulation checks passed."); return;
+        }
         if (args is ["--tray-preview"])
         {
             var previewMain = new MainWindow();
@@ -344,14 +349,14 @@ internal static class Program
         {
             var menu = (System.Windows.Forms.ContextMenuStrip)typeof(TrayService).GetField("_menu", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(tray)!;
             var labels = menu.Items.Cast<System.Windows.Forms.ToolStripItem>().Select(item => item.Text).ToArray();
-            Check(new[] { "窗口透明", "切换与滚动", "系统模拟", "广告弹窗", "单行阅读", "音乐播放" }.All(labels.Contains), "tray menu contains all six tool entries including music");
+            Check(new[] { "窗口透明", "切换滚动", "系统模拟", "广告弹窗", "单行阅读", "音乐播放" }.All(labels.Contains), "tray menu contains all six tool entries including music");
 
             typeof(AppController).GetField("_main", BindingFlags.NonPublic | BindingFlags.Static)!.SetValue(null, main);
             application.MainWindow = main;
             var features = (Dictionary<string, Window>)typeof(AppController).GetField("Features", BindingFlags.NonPublic | BindingFlags.Static)!.GetValue(null)!;
             foreach (var (label, key) in new[]
             {
-                ("窗口透明", "transparency-hint"), ("切换与滚动", "switcher"), ("系统模拟", "simulation"), ("快捷键设置", "hotkeys")
+                ("窗口透明", "transparency-hint"), ("切换滚动", "switcher"), ("系统模拟", "simulation"), ("快捷键设置", "hotkeys")
             })
             {
                 var entry = menu.Items.Cast<System.Windows.Forms.ToolStripItem>().Single(item => item.Text == label);
@@ -405,7 +410,7 @@ internal static class Program
         Check(AppController.OpacityStep == 10, "opacity shortcut step is ten percentage points");
         Render(main, "main-v9.png");
         Render(hint, "transparency-hint-v9.png");
-        foreach (var scene in new[] { "Blue", "Black", "Update", "Crash" })
+        foreach (var (scene, _, _) in SystemSimulationWindow.Scenes)
         {
             var sceneWindow = new SimulationSceneWindow(scene, false, false, false);
             try

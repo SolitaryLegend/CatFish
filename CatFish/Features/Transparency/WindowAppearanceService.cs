@@ -7,12 +7,13 @@ namespace CatFish.Features.Transparency;
 
 public sealed class WindowAppearanceService
 {
+    private const int OneKeyOpacity = 40;
     private sealed record OriginalState(nint Style, bool Topmost, bool HadLayered, bool HasLayeredAttributes, byte Alpha, uint ColorKey, uint Flags);
     private readonly Dictionary<nint, OriginalState> _original = new();
     private readonly Dictionary<Window, (double Opacity, bool Topmost)> _wpfOriginal = new();
 
     // Resolve the foreground HWND on every key press without activating CatFish.
-    // A null change restores full opacity; other values are percentage-point steps.
+    // A null change toggles between 40% and full opacity; other values are percentage-point steps.
     public bool TryChangeForegroundOpacity(int? change, out string error)
         => TryChangeForegroundOpacity(change, out _, out _, out error);
 
@@ -25,16 +26,23 @@ public sealed class WindowAppearanceService
 
         if (HwndSource.FromHwnd(handle)?.RootVisual is Window { AllowsTransparency: true } ownWindow)
         {
-            percent = change is int step ? (int)Math.Clamp(Math.Round(ownWindow.Opacity * 100) + step, 0, 100) : 100;
+            percent = NextOpacityPercent(ownWindow.Opacity, change);
             return TrySetOpacity(ownWindow, percent / 100d, out error);
         }
 
-        var current = 100d;
+        var current = 1d;
         if (NativeMethods.GetLayeredWindowAttributes(handle, out _, out var alpha, out var flags)
             && (flags & NativeMethods.LwaAlpha) != 0)
-            current = Math.Round(alpha * 100d / 255);
-        percent = change is int delta ? (int)Math.Clamp(current + delta, 0, 100) : 100;
+            current = alpha / 255d;
+        percent = NextOpacityPercent(current, change);
         return TrySetOpacity(handle, percent / 100d, out error);
+    }
+
+    private static int NextOpacityPercent(double current, int? change)
+    {
+        if (change is int step)
+            return (int)Math.Clamp(Math.Round(current * 100) + step, 0, 100);
+        return current < 1 ? 100 : OneKeyOpacity;
     }
 
     public bool TrySetOpacity(Window window, double opacity, out string error)
