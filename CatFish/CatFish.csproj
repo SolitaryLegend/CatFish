@@ -11,6 +11,8 @@
     <RootNamespace>CatFish</RootNamespace>
     <Product>CatFish</Product>
     <Title>CatFish</Title>
+    <Version>1.0.2</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Copyright>孤独寂寞传说</Copyright>
     <ApplicationIcon>Assets\CatFish.ico</ApplicationIcon>
   </PropertyGroup>
@@ -25,14 +27,37 @@
     <Resource Include="Assets\CatFish.png" />
   </ItemGroup>
 
-  <Target Name="AddRuntimeLauncherToPublish" AfterTargets="ComputeFilesToPublish"
+  <Target Name="AddRuntimeLauncherToPublish" AfterTargets="ComputeFilesToPublish" DependsOnTargets="GetAssemblyVersion"
           Condition="'$(OS)' == 'Windows_NT' and '$(UseAppHost)' == 'true' and '$(SelfContained)' != 'true' and '$(PublishSingleFile)' != 'true' and '$(_NativeExecutableExtension)' == '.exe' and ('$(RuntimeIdentifier)' == '' or '$(RuntimeIdentifier)' == 'win-x64')">
     <PropertyGroup>
       <_LauncherFramework>$(SystemRoot)\Microsoft.NET\Framework64\v4.0.30319</_LauncherFramework>
-      <_LauncherOutput>$(IntermediateOutputPath)launcher\CatFish.exe</_LauncherOutput>
+      <_LauncherDirectory>$(IntermediateOutputPath)launcher\</_LauncherDirectory>
+      <_LauncherOutput>$(_LauncherDirectory)CatFish.exe</_LauncherOutput>
+      <_LauncherAssemblyInfo>$(_LauncherDirectory)Launcher.AssemblyInfo.cs</_LauncherAssemblyInfo>
     </PropertyGroup>
-    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(_LauncherOutput)'))" />
-    <Exec Command="&quot;$(_LauncherFramework)\csc.exe&quot; /nologo /codepage:65001 /target:winexe /optimize+ /win32icon:&quot;$(MSBuildProjectDirectory)\$(ApplicationIcon)&quot; /reference:System.Windows.Forms.dll /out:&quot;$(_LauncherOutput)&quot; &quot;$(MSBuildProjectDirectory)\..\Launcher\Program.cs&quot;" />
+    <MakeDir Directories="$(_LauncherDirectory)" />
+    <ItemGroup>
+      <_LauncherAttribute Include="System.Reflection.AssemblyTitleAttribute">
+        <_Parameter1>$(Title)</_Parameter1>
+      </_LauncherAttribute>
+      <_LauncherAttribute Include="System.Reflection.AssemblyProductAttribute">
+        <_Parameter1>$(Product)</_Parameter1>
+      </_LauncherAttribute>
+      <_LauncherAttribute Include="System.Reflection.AssemblyCopyrightAttribute">
+        <_Parameter1>$(Copyright)</_Parameter1>
+      </_LauncherAttribute>
+      <_LauncherAttribute Include="System.Reflection.AssemblyVersionAttribute">
+        <_Parameter1>$(AssemblyVersion)</_Parameter1>
+      </_LauncherAttribute>
+      <_LauncherAttribute Include="System.Reflection.AssemblyFileVersionAttribute">
+        <_Parameter1>$(FileVersion)</_Parameter1>
+      </_LauncherAttribute>
+      <_LauncherAttribute Include="System.Reflection.AssemblyInformationalVersionAttribute">
+        <_Parameter1>$(InformationalVersion)</_Parameter1>
+      </_LauncherAttribute>
+    </ItemGroup>
+    <WriteCodeFragment AssemblyAttributes="@(_LauncherAttribute)" Language="C#" OutputFile="$(_LauncherAssemblyInfo)" />
+    <Exec Command="&quot;$(_LauncherFramework)\csc.exe&quot; /nologo /codepage:65001 /target:winexe /optimize+ /win32icon:&quot;$(MSBuildProjectDirectory)\$(ApplicationIcon)&quot; /reference:System.Windows.Forms.dll /out:&quot;$(_LauncherOutput)&quot; &quot;$(MSBuildProjectDirectory)\..\Launcher\Program.cs&quot; &quot;$(_LauncherAssemblyInfo)&quot;" />
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.RelativePath)' == 'CatFish.exe'" />
       <ResolvedFileToPublish Include="$(_LauncherOutput)" RelativePath="CatFish.exe" CopyToPublishDirectory="PreserveNewest" />
